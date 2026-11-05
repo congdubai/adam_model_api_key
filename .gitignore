@@ -1,0 +1,43 @@
+# Data directory (Contains keys, cache, generated audio, jobs) - NEVER commit!
+data/
+backend/data/
+**/data/
+
+# Backend (Java / Maven)
+target/
+backend/target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+.metadata
+.classpath
+.project
+.settings/
+*.log
+*.class
+
+# Frontend (Node / React / Vite)
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+dist-ssr
+*.local
+.env
+.env.local
+.env.production
+.eslintcache
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+
