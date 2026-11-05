@@ -18,7 +18,8 @@
    - **Lỗi 401/402/403 (Quota exceeded)**: Đánh dấu key hết credit, đặt `remaining = độ dài đoạn - 1` để các đoạn ngắn hơn vẫn có cơ hội tận dụng phần credit lẻ còn lại; sau đó lập tức chuyển sang key tiếp theo.
    - **Hết key khả dụng**: Dừng job nhưng **giữ nguyên toàn bộ các đoạn đã đọc thành công**. Người dùng chỉ cần thêm key mới và bấm nút **"Thêm Key & Tiếp tục"** để chạy tiếp mà không tốn công đọc lại từ đầu.
 
-3. **Soạn thảo kịch bản & Tách đoạn**:
+3. **Soạn thảo kịch bản, Tách đoạn & Mốc thời gian (CapCut Timecode)**:
+   - **Mốc thời gian phân cảnh `[start, end]` hoặc `[start]`**: Ví dụ `[0, 20]` cho đoạn mở đầu, `[45, 60]` cho đoạn tiếp theo. Hệ thống sẽ **tự động chèn khoảng lặng chuẩn xác từ giây 20 đến giây 45**, giúp bạn để trống khoảng thời gian đó cho cảnh hành động, kỹ xảo hoặc nhạc nền trong CapCut mà không cần cắt ghép audio thủ công!
    - Đếm số ký tự, số từ và số đoạn theo thời gian thực.
    - Hai chế độ tách: *Mỗi dòng là một đoạn* hoặc *Đoạn cách nhau bằng dòng trống*.
    - Tự động cắt đoạn dài hơn 4.500 ký tự (v3) hoặc 9.000 ký tự (các model khác) theo ranh giới câu (`.`, `!`, `?`, `…`).

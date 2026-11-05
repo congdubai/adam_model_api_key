@@ -274,17 +274,26 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
                   <tr key={seg.index} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition">
                     <td className="py-2.5 px-3 text-slate-400 font-mono">{seg.index}</td>
                     <td className="py-2.5 px-3 font-mono">
-                      <button
-                        onClick={() => jumpToSegment(seg.startTimeSeconds)}
-                        title="Bấm để phát từ thời điểm này"
-                        className="text-brand-600 dark:text-brand-400 hover:underline font-medium flex items-center gap-1"
-                      >
-                        <Play className="w-2.5 h-2.5 fill-current" />
-                        <span>
-                          {seg.startTimeSeconds.toFixed(2)}s → {seg.endTimeSeconds.toFixed(2)}s
-                        </span>
-                        <span className="text-slate-400 text-[10px]">({seg.durationSeconds.toFixed(2)}s)</span>
-                      </button>
+                      <div className="space-y-0.5">
+                        <button
+                          onClick={() => jumpToSegment(seg.startTimeSeconds)}
+                          title="Bấm để phát từ thời điểm này"
+                          className="text-brand-600 dark:text-brand-400 hover:underline font-medium flex items-center gap-1"
+                        >
+                          <Play className="w-2.5 h-2.5 fill-current" />
+                          <span>
+                            {seg.startTimeSeconds.toFixed(2)}s → {seg.endTimeSeconds.toFixed(2)}s
+                          </span>
+                        </button>
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                          <span className="text-slate-400 font-sans">Độ dài: {seg.durationSeconds.toFixed(2)}s</span>
+                          {seg.targetStartTime !== null && (
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-mono text-[9px] font-bold">
+                              Mốc: [{seg.targetStartTime}s{seg.targetEndTime ? ' - ' + seg.targetEndTime + 's' : ''}]
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="py-2.5 px-3">
                       {seg.fromCache ? (

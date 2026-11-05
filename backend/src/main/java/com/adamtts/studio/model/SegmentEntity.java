@@ -9,6 +9,8 @@ public class SegmentEntity {
     private double durationSeconds;
     private double startTimeSeconds;
     private double endTimeSeconds;
+    private Double targetStartTime;
+    private Double targetEndTime;
     private String keyIdUsed;
     private String keyMasked;
     private boolean fromCache;
@@ -88,6 +90,22 @@ public class SegmentEntity {
 
     public void setEndTimeSeconds(double endTimeSeconds) {
         this.endTimeSeconds = endTimeSeconds;
+    }
+
+    public Double getTargetStartTime() {
+        return targetStartTime;
+    }
+
+    public void setTargetStartTime(Double targetStartTime) {
+        this.targetStartTime = targetStartTime;
+    }
+
+    public Double getTargetEndTime() {
+        return targetEndTime;
+    }
+
+    public void setTargetEndTime(Double targetEndTime) {
+        this.targetEndTime = targetEndTime;
     }
 
     public String getKeyIdUsed() {

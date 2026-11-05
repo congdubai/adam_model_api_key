@@ -16,6 +16,68 @@ public class TextSplittingService {
     private static final Pattern EMOTION_TAG_PATTERN = Pattern.compile("\\[[^\\]]*\\]");
     // Sentence boundary regex: punctuation followed by space or end of text
     private static final Pattern SENTENCE_SPLIT_PATTERN = Pattern.compile("(?<=[.!?…])\\s+");
+    // Timeline tag regex at beginning of segment: [0, 30], [0 , 30], [45, 60], [45], [00:45, 01:10], [1:30]
+    private static final Pattern TIMELINE_TAG_PATTERN = Pattern.compile(
+            "^\\[\\s*(\\d+(?::\\d+)?(?:\\.\\d+)?)\\s*(?:,\\s*(\\d+(?::\\d+)?(?:\\.\\d+)?))?\\s*\\]\\s*"
+    );
+
+    public record ParsedSegment(
+            String rawText,
+            String spokenText,
+            Double targetStartTime,
+            Double targetEndTime
+    ) {}
+
+    /**
+     * Parses optional timeline anchor [start, end] from beginning of a segment.
+     * Strips [start, end] from spoken text, but keeps emotion tags like [excited].
+     */
+    public ParsedSegment parseSegmentTiming(String segmentText) {
+        if (segmentText == null || segmentText.isBlank()) {
+            return new ParsedSegment("", "", null, null);
+        }
+
+        String trimmed = segmentText.trim();
+        Matcher matcher = TIMELINE_TAG_PATTERN.matcher(trimmed);
+
+        if (matcher.find()) {
+            String startStr = matcher.group(1);
+            String endStr = matcher.group(2);
+
+            Double start = parseTimestampToSeconds(startStr);
+            Double end = endStr != null ? parseTimestampToSeconds(endStr) : null;
+
+            String spokenText = trimmed.substring(matcher.end()).trim();
+            return new ParsedSegment(trimmed, spokenText, start, end);
+        }
+
+        return new ParsedSegment(trimmed, trimmed, null, null);
+    }
+
+    public static Double parseTimestampToSeconds(String input) {
+        if (input == null || input.isBlank()) {
+            return null;
+        }
+        try {
+            String trimmed = input.trim();
+            if (trimmed.contains(":")) {
+                String[] parts = trimmed.split(":");
+                if (parts.length == 2) {
+                    double minutes = Double.parseDouble(parts[0]);
+                    double seconds = Double.parseDouble(parts[1]);
+                    return minutes * 60.0 + seconds;
+                } else if (parts.length == 3) {
+                    double hours = Double.parseDouble(parts[0]);
+                    double minutes = Double.parseDouble(parts[1]);
+                    double seconds = Double.parseDouble(parts[2]);
+                    return hours * 3600.0 + minutes * 60.0 + seconds;
+                }
+            }
+            return Double.parseDouble(trimmed);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     public int getMaxCharsForModel(String modelId) {
         if ("eleven_v3".equalsIgnoreCase(modelId)) {

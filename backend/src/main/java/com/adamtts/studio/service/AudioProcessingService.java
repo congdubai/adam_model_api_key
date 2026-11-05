@@ -165,6 +165,108 @@ public class AudioProcessingService {
     }
 
     /**
+     * Concatenates audio segments with exact timeline spacing (supporting custom timeline anchors like [0, 20] and [45, 60]).
+     */
+    public void mergeSegmentsWithExactTiming(List<com.adamtts.studio.model.SegmentEntity> segments, File workDir, File outputWav, File outputMp3) throws IOException {
+        requireFfmpeg();
+
+        if (segments == null || segments.isEmpty()) {
+            throw new IllegalArgumentException("Không có file âm thanh nào để ghép");
+        }
+
+        if (!workDir.exists()) {
+            workDir.mkdirs();
+        }
+
+        File concatListFile = new File(workDir, "concat_list.txt");
+        try (PrintWriter writer = new PrintWriter(new OutputStreamWriter(new FileOutputStream(concatListFile), StandardCharsets.UTF_8))) {
+            // 1. Initial silence if first segment starts after 0.0s (e.g. [5, 20])
+            com.adamtts.studio.model.SegmentEntity firstSeg = segments.get(0);
+            if (firstSeg.getStartTimeSeconds() > 0.005) {
+                File leadSilence = new File(workDir, "lead_silence.wav");
+                generateSilenceFile(firstSeg.getStartTimeSeconds(), leadSilence);
+                String escapedLead = leadSilence.getAbsolutePath().replace("\\", "/").replace("'", "'\\''");
+                writer.println("file '" + escapedLead + "'");
+            }
+
+            // 2. Add each segment and calculate silence gap to next segment
+            for (int i = 0; i < segments.size(); i++) {
+                com.adamtts.studio.model.SegmentEntity seg = segments.get(i);
+                File mp3 = new File(seg.getAudioFilePath());
+                File segmentWav = new File(workDir, "seg_" + i + ".wav");
+
+                List<String> convertCmd = List.of(
+                        ffmpegCmd,
+                        "-y",
+                        "-i", mp3.getAbsolutePath(),
+                        "-ar", "44100",
+                        "-ac", "1",
+                        "-c:a", "pcm_s16le",
+                        segmentWav.getAbsolutePath()
+                );
+                executeProcess(convertCmd, "Chuẩn hoá đoạn " + (i + 1));
+
+                String escapedPath = segmentWav.getAbsolutePath().replace("\\", "/").replace("'", "'\\''");
+                writer.println("file '" + escapedPath + "'");
+
+                // If not last segment, check gap to next segment
+                if (i < segments.size() - 1) {
+                    com.adamtts.studio.model.SegmentEntity nextSeg = segments.get(i + 1);
+                    double gap = nextSeg.getStartTimeSeconds() - seg.getEndTimeSeconds();
+                    if (gap > 0.005) {
+                        File gapSilence = new File(workDir, "gap_" + i + ".wav");
+                        generateSilenceFile(gap, gapSilence);
+                        String escapedGap = gapSilence.getAbsolutePath().replace("\\", "/").replace("'", "'\\''");
+                        writer.println("file '" + escapedGap + "'");
+                    }
+                }
+            }
+        }
+
+        // 3. Concatenate using concat demuxer to output WAV (44.1kHz mono 16-bit)
+        List<String> concatWavCmd = List.of(
+                ffmpegCmd,
+                "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", concatListFile.getAbsolutePath(),
+                "-c", "copy",
+                outputWav.getAbsolutePath()
+        );
+        executeProcess(concatWavCmd, "Ghép file WAV chính xác");
+
+        // 4. Export MP3 from output WAV
+        if (outputMp3 != null) {
+            List<String> mp3Cmd = List.of(
+                    ffmpegCmd,
+                    "-y",
+                    "-i", outputWav.getAbsolutePath(),
+                    "-ar", "44100",
+                    "-ac", "1",
+                    "-c:a", "libmp3lame",
+                    "-b:a", "128k",
+                    outputMp3.getAbsolutePath()
+            );
+            executeProcess(mp3Cmd, "Xuất file MP3");
+        }
+    }
+
+    private void generateSilenceFile(double durationSeconds, File outputFile) {
+        List<String> silenceCmd = List.of(
+                ffmpegCmd,
+                "-y",
+                "-f", "lavfi",
+                "-i", "anullsrc=r=44100:cl=mono",
+                "-t", String.format(java.util.Locale.US, "%.4f", durationSeconds),
+                "-ar", "44100",
+                "-ac", "1",
+                "-c:a", "pcm_s16le",
+                outputFile.getAbsolutePath()
+        );
+        executeProcess(silenceCmd, "Tạo khoảng lặng (" + String.format(java.util.Locale.US, "%.2fs", durationSeconds) + ")");
+    }
+
+    /**
      * Concatenates audio segments with gap silence into WAV (44.1kHz mono 16-bit) and MP3.
      */
     public void mergeSegments(List<File> segmentMp3Files, double gapSeconds, File workDir, File outputWav, File outputMp3) throws IOException {

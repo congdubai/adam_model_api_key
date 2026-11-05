@@ -80,5 +80,34 @@ class TextSplittingServiceTest {
         assertFalse(clean.contains("["));
         assertFalse(clean.contains("]"));
     }
+
+    @Test
+    @DisplayName("Tách mốc thời gian [start, end] và giữ nguyên thẻ cảm xúc trong spoken text")
+    void testParseSegmentTiming() {
+        TextSplittingService.ParsedSegment p1 = service.parseSegmentTiming("[0, 20] [excited] Đoạn mở đầu từ 0 đến 20s");
+        assertEquals(0.0, p1.targetStartTime());
+        assertEquals(20.0, p1.targetEndTime());
+        assertEquals("[excited] Đoạn mở đầu từ 0 đến 20s", p1.spokenText());
+
+        TextSplittingService.ParsedSegment p2 = service.parseSegmentTiming("[45, 60] Đoạn tiếp theo ở giây 45");
+        assertEquals(45.0, p2.targetStartTime());
+        assertEquals(60.0, p2.targetEndTime());
+        assertEquals("Đoạn tiếp theo ở giây 45", p2.spokenText());
+
+        TextSplittingService.ParsedSegment p3 = service.parseSegmentTiming("[01:15, 01:45] Mốc thời gian dạng MM:SS");
+        assertEquals(75.0, p3.targetStartTime());
+        assertEquals(105.0, p3.targetEndTime());
+        assertEquals("Mốc thời gian dạng MM:SS", p3.spokenText());
+
+        TextSplittingService.ParsedSegment p4 = service.parseSegmentTiming("[30] Chỉ có mốc bắt đầu");
+        assertEquals(30.0, p4.targetStartTime());
+        assertNull(p4.targetEndTime());
+        assertEquals("Chỉ có mốc bắt đầu", p4.spokenText());
+
+        TextSplittingService.ParsedSegment p5 = service.parseSegmentTiming("Không có mốc thời gian");
+        assertNull(p5.targetStartTime());
+        assertNull(p5.targetEndTime());
+        assertEquals("Không có mốc thời gian", p5.spokenText());
+    }
 }
 

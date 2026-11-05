@@ -96,11 +96,15 @@ public class JobManagerService {
 
         List<SegmentEntity> segmentEntities = new ArrayList<>();
         for (int i = 0; i < rawSegments.size(); i++) {
-            String text = rawSegments.get(i);
-            String cleanText = textSplittingService.stripEmotionTags(text);
-            String hash = audioProcessingService.calculateHash(job.getModelId(), job.getVoiceId(), job.getStability(), text);
+            String rawText = rawSegments.get(i);
+            TextSplittingService.ParsedSegment parsed = textSplittingService.parseSegmentTiming(rawText);
+            String spokenText = parsed.spokenText();
+            String cleanText = textSplittingService.stripEmotionTags(spokenText);
+            String hash = audioProcessingService.calculateHash(job.getModelId(), job.getVoiceId(), job.getStability(), spokenText);
 
-            SegmentEntity seg = new SegmentEntity(i + 1, text, cleanText, hash);
+            SegmentEntity seg = new SegmentEntity(i + 1, spokenText, cleanText, hash);
+            seg.setTargetStartTime(parsed.targetStartTime());
+            seg.setTargetEndTime(parsed.targetEndTime());
             segmentEntities.add(seg);
         }
         job.setSegments(segmentEntities);
@@ -230,8 +234,8 @@ public class JobManagerService {
                 File outputJson = new File(jobDir, "timeline.json");
                 File outputCsv = new File(jobDir, "timeline.csv");
 
-                // Merge audio with sample-accurate gap
-                audioProcessingService.mergeSegments(audioFiles, job.getGapSeconds(), workDir, outputWav, outputMp3);
+                // Merge audio with exact timeline spacing (supports [0, 20], [45, 60] time codes)
+                audioProcessingService.mergeSegmentsWithExactTiming(segments, workDir, outputWav, outputMp3);
 
                 // Export SRT, JSON, CSV
                 timelineService.writeSrtFile(segments, outputSrt);
@@ -307,11 +311,7 @@ public class JobManagerService {
             File outputJson = new File(jobDir, "timeline.json");
             File outputCsv = new File(jobDir, "timeline.csv");
 
-            List<File> audioFiles = job.getSegments().stream()
-                    .map(s -> new File(s.getAudioFilePath()))
-                    .toList();
-
-            audioProcessingService.mergeSegments(audioFiles, job.getGapSeconds(), workDir, outputWav, outputMp3);
+            audioProcessingService.mergeSegmentsWithExactTiming(job.getSegments(), workDir, outputWav, outputMp3);
             timelineService.writeSrtFile(job.getSegments(), outputSrt);
             timelineService.writeTimelineJsonFile(job.getSegments(), outputJson);
             timelineService.writeTimelineCsvFile(job.getSegments(), outputCsv);
@@ -420,6 +420,8 @@ public class JobManagerService {
                         s.isFromCache(),
                         s.getErrorMessage()
                 );
+                sDto.setTargetStartTime(s.getTargetStartTime());
+                sDto.setTargetEndTime(s.getTargetEndTime());
                 segmentDtos.add(sDto);
             }
         }

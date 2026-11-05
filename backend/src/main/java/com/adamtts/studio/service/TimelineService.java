@@ -42,16 +42,34 @@ public class TimelineService {
             SegmentEntity seg = segments.get(i);
             long segSamples = Math.round(seg.getDurationSeconds() * sampleRate);
 
+            // If segment specifies a target start time (e.g. [45, 60] -> 45.0s)
+            if (seg.getTargetStartTime() != null) {
+                long targetStartSamples = Math.round(seg.getTargetStartTime() * sampleRate);
+                if (targetStartSamples > totalSamples) {
+                    totalSamples = targetStartSamples;
+                }
+            }
+
             double startTime = totalSamples / sampleRate;
             double endTime = (totalSamples + segSamples) / sampleRate;
 
             seg.setStartTimeSeconds(startTime);
             seg.setEndTimeSeconds(endTime);
 
-            // Advance sample count by segment duration + gap (if not the last segment)
+            // Advance sample count by segment duration
             totalSamples += segSamples;
+
+            // If there is a next segment:
             if (i < segments.size() - 1) {
-                totalSamples += gapSamples;
+                SegmentEntity nextSeg = segments.get(i + 1);
+                if (nextSeg.getTargetStartTime() != null) {
+                    long nextTargetStartSamples = Math.round(nextSeg.getTargetStartTime() * sampleRate);
+                    if (nextTargetStartSamples <= totalSamples) {
+                        totalSamples += gapSamples;
+                    }
+                } else {
+                    totalSamples += gapSamples;
+                }
             }
         }
     }

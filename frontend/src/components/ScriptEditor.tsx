@@ -29,6 +29,12 @@ const SAMPLE_TEXT = `[excited] Chào mừng các bạn đã đến với Adam TT
 
 Hãy dán kịch bản của bạn vào đây và cùng trải nghiệm chất lượng giọng đọc Eleven v3 đỉnh cao nhé!`;
 
+const TIMELINE_SAMPLE_TEXT = `[0, 20] [excited] Đoạn mở đầu từ giây 0: Chào mừng các bạn đến với video! Hãy cùng theo dõi tình tiết gay cấn ngay sau đây.
+
+[45, 60] [whispers] Đoạn tiếp theo bắt đầu chính xác ở giây 45: Toàn bộ khoảng từ giây 20 đến 45 sẽ là khoảng lặng cho cảnh hành động và nhạc nền trong CapCut.
+
+[01:15, 01:30] Đoạn kết thúc: Cảm ơn các bạn đã theo dõi, hẹn gặp lại ở video tiếp theo nhé!`;
+
 export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   text,
   onChangeText,
@@ -117,20 +123,42 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 
       {/* Emotion Tag Bar */}
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
           <span className="flex items-center gap-1 font-medium">
             <Sparkles className="w-3.5 h-3.5 text-brand-500" />
-            Thẻ cảm xúc Eleven v3 (bấm để chèn tại con trỏ):
+            Thẻ cảm xúc & Mốc thời gian (bấm để chèn tại con trỏ):
           </span>
-          <button
-            type="button"
-            onClick={() => onChangeText(SAMPLE_TEXT)}
-            className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline font-medium"
-          >
-            Dán kịch bản mẫu
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onChangeText(SAMPLE_TEXT)}
+              className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline font-medium"
+            >
+              Mẫu cảm xúc
+            </button>
+            <span className="text-slate-300 dark:text-slate-700">•</span>
+            <button
+              type="button"
+              onClick={() => onChangeText(TIMELINE_SAMPLE_TEXT)}
+              className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold"
+              title="Kịch bản có mốc thời gian [0, 20], [45, 60] để khớp cảnh CapCut"
+            >
+              🎬 Mẫu mốc thời gian CapCut [0, 20]
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-1.5">
+          {/* Custom Timeline Tag Button */}
+          <button
+            type="button"
+            onClick={() => handleInsertTag('[0, 20]')}
+            className="px-2.5 py-1 text-xs rounded-lg border border-indigo-300 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-300 font-mono transition hover:bg-indigo-100"
+            title="Chèn mốc thời gian bắt đầu và kết thúc phân cảnh"
+          >
+            <span className="font-bold text-indigo-600 dark:text-indigo-400 mr-1">[0, 20]</span>
+            <span className="text-[10px] text-slate-500">(Mốc giây)</span>
+          </button>
+
           {EMOTION_TAGS.map((t) => (
             <button
               key={t.tag}
@@ -143,6 +171,14 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Timeline Hint Box */}
+      <div className="text-[11px] bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/80 p-2.5 rounded-xl text-slate-600 dark:text-slate-400 flex items-start gap-2">
+        <span className="font-bold text-indigo-600 dark:text-indigo-400 shrink-0">🎬 Mốc CapCut:</span>
+        <span>
+          Ghi <code className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-[10px]">[0, 20]</code>, <code className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-[10px]">[45, 60]</code> hoặc <code className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-[10px]">[01:15]</code> ở đầu đoạn. Tool sẽ <strong>tự động chèn khoảng lặng</strong> giữa các đoạn để audio khớp chính xác từng phân cảnh video CapCut!
+        </span>
       </div>
 
       {/* Textarea */}

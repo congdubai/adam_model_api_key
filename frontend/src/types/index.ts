@@ -42,6 +42,8 @@ export interface SegmentDto {
   durationSeconds: number;
   startTimeSeconds: number;
   endTimeSeconds: number;
+  targetStartTime: number | null;
+  targetEndTime: number | null;
   keyMasked: string | null;
   fromCache: boolean;
   errorMessage: string | null;

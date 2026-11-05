@@ -80,5 +80,30 @@ class TimelineServiceTest {
         assertFalse(srt.contains("[whispers]"));
         assertFalse(srt.contains("[pause]"));
     }
+
+    @Test
+    @DisplayName("Tính toán mốc timeline theo neo thời gian [start, end] như [0, 20] và [45, 60]")
+    void testCalculateTimestampsWithAnchors() {
+        SegmentEntity s1 = new SegmentEntity(1, "Đoạn 1", "Đoạn 1", "h1");
+        s1.setDurationSeconds(12.0); // speaks 12 seconds
+        s1.setTargetStartTime(0.0);
+        s1.setTargetEndTime(20.0);
+
+        SegmentEntity s2 = new SegmentEntity(2, "Đoạn 2", "Đoạn 2", "h2");
+        s2.setDurationSeconds(10.0); // speaks 10 seconds
+        s2.setTargetStartTime(45.0); // starts at second 45!
+        s2.setTargetEndTime(60.0);
+
+        List<SegmentEntity> list = List.of(s1, s2);
+        timelineService.calculateTimestamps(list, 0.4);
+
+        // Segment 1 starts at 0s, ends at 12s
+        assertEquals(0.0, s1.getStartTimeSeconds(), 0.001);
+        assertEquals(12.0, s1.getEndTimeSeconds(), 0.001);
+
+        // Segment 2 starts exactly at 45s (silence from 12s to 45s), ends at 55s
+        assertEquals(45.0, s2.getStartTimeSeconds(), 0.001);
+        assertEquals(55.0, s2.getEndTimeSeconds(), 0.001);
+    }
 }
 
