@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   Play,
   Pause,
@@ -28,17 +28,27 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [audioVersion, setAudioVersion] = useState(0);
   const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const togglePlay = () => {
+  // Stable audio URL that does NOT change on every re-render!
+  const audioUrl = useMemo(
+    () => getAudioStreamUrl(job.id, audioVersion),
+    [job.id, audioVersion]
+  );
+
+  const togglePlay = async () => {
     if (!audioRef.current) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play();
+    try {
+      if (audioRef.current.paused) {
+        await audioRef.current.play();
+      } else {
+        audioRef.current.pause();
+      }
+    } catch (err) {
+      console.error('Audio play error:', err);
     }
-    setIsPlaying(!isPlaying);
   };
 
   const handleTimeUpdate = () => {
@@ -61,11 +71,13 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
     }
   };
 
-  const jumpToSegment = (startTime: number) => {
-    if (audioRef.current) {
+  const jumpToSegment = async (startTime: number) => {
+    if (!audioRef.current) return;
+    try {
       audioRef.current.currentTime = startTime;
-      audioRef.current.play();
-      setIsPlaying(true);
+      await audioRef.current.play();
+    } catch (err) {
+      console.error('Jump to segment error:', err);
     }
   };
 
@@ -73,15 +85,14 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
     try {
       setRegeneratingIndex(idx);
       await onRegenerateSegment(idx);
-      if (audioRef.current) {
-        audioRef.current.load();
-      }
+      setAudioVersion((v) => v + 1);
     } finally {
       setRegeneratingIndex(null);
     }
   };
 
   const formatSeconds = (sec: number) => {
+    if (isNaN(sec) || sec < 0) return '00:00.0';
     const mins = Math.floor(sec / 60);
     const secs = Math.floor(sec % 60);
     const ms = Math.floor((sec % 1) * 10);
@@ -119,20 +130,28 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
         </button>
       </div>
 
-      {/* Audio Player */}
+      {/* Audio Player Card */}
       <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 space-y-3">
+        {/* Hidden/Native Audio Element */}
         <audio
           ref={audioRef}
-          src={getAudioStreamUrl(job.id)}
+          src={audioUrl}
+          preload="auto"
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onEnded={() => setIsPlaying(false)}
+          onError={(e) => console.error('Audio load error:', e)}
         />
 
+        {/* Custom Scrubber Player */}
         <div className="flex items-center gap-4">
           <button
+            type="button"
             onClick={togglePlay}
-            className="w-12 h-12 rounded-full bg-brand-600 hover:bg-brand-700 text-white flex items-center justify-center shadow-md shadow-brand-500/30 transition shrink-0"
+            className="w-12 h-12 rounded-full bg-brand-600 hover:bg-brand-700 text-white flex items-center justify-center shadow-md shadow-brand-500/30 transition shrink-0 active:scale-95"
+            title={isPlaying ? 'Tạm dừng' : 'Phát âm thanh'}
           >
             {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
           </button>
@@ -152,6 +171,19 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
               <span>{formatSeconds(duration)}</span>
             </div>
           </div>
+        </div>
+
+        {/* Native Browser Player Bar for 100% Reliability */}
+        <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+            Trình phát chuẩn trình duyệt:
+          </span>
+          <audio
+            controls
+            preload="metadata"
+            src={audioUrl}
+            className="h-8 max-w-sm w-full"
+          />
         </div>
       </div>
 

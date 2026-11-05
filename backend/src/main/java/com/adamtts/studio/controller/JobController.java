@@ -69,7 +69,9 @@ public class JobController {
     }
 
     @GetMapping("/{id}/audio")
-    public ResponseEntity<Resource> getAudioStream(@PathVariable String id) {
+    public ResponseEntity<?> getAudioStream(
+            @PathVariable String id,
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
         File file = jobManagerService.getOutputFile(id, "mp3");
         if (file == null || !file.exists()) {
             file = jobManagerService.getOutputFile(id, "wav");
@@ -78,11 +80,37 @@ public class JobController {
             return ResponseEntity.notFound().build();
         }
 
-        String mediaType = file.getName().endsWith(".mp3") ? "audio/mpeg" : "audio/wav";
+        Resource resource = new FileSystemResource(file);
+        MediaType mediaType = MediaType.parseMediaType(file.getName().endsWith(".mp3") ? "audio/mpeg" : "audio/wav");
+        long fileLength = file.length();
+
+        if (rangeHeader != null) {
+            try {
+                java.util.List<org.springframework.http.HttpRange> ranges = org.springframework.http.HttpRange.parseRanges(rangeHeader);
+                if (!ranges.isEmpty()) {
+                    org.springframework.http.HttpRange range = ranges.get(0);
+                    long start = range.getRangeStart(fileLength);
+                    long end = range.getRangeEnd(fileLength);
+                    long rangeLength = end - start + 1;
+                    org.springframework.core.io.support.ResourceRegion region =
+                            new org.springframework.core.io.support.ResourceRegion(resource, start, rangeLength);
+
+                    return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+                            .contentType(mediaType)
+                            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                            .header(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + fileLength)
+                            .body(region);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(mediaType))
+                .contentType(mediaType)
+                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(fileLength))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.getName() + "\"")
-                .body(new FileSystemResource(file));
+                .body(resource);
     }
 
     @GetMapping("/{id}/download/{format}")

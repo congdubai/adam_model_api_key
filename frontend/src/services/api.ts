@@ -110,7 +110,10 @@ export function getDownloadUrl(jobId: string, format: 'wav' | 'mp3' | 'srt' | 'j
   return `${API_BASE}/jobs/${jobId}/download/${format}`;
 }
 
-export function getAudioStreamUrl(jobId: string): string {
-  return `${API_BASE}/jobs/${jobId}/audio?t=${Date.now()}`;
+export function getAudioStreamUrl(jobId: string, version?: string | number): string {
+  if (version !== undefined && version !== null) {
+    return `${API_BASE}/jobs/${jobId}/audio?v=${version}`;
+  }
+  return `${API_BASE}/jobs/${jobId}/audio`;
 }
 
