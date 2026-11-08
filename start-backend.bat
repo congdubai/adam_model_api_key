@@ -45,6 +45,12 @@ if %ERRORLEVEL% neq 0 (
     )
 )
 
+REM Tu dong giai phong port 8080 neu bi chiem boi tien trinh cu
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8080 ^| findstr LISTENING') do (
+    echo [THONG BAO] Port 8080 dang bi chiem boi PID %%a. Dang tat de giai phong...
+    taskkill /F /PID %%a >nul 2>nul
+)
+
 echo [THONG BAO] Dang khoi chay Spring Boot backend...
 call mvn.cmd spring-boot:run
 pause
