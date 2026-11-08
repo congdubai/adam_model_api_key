@@ -11,6 +11,7 @@ public class JobCreateRequest {
     private Double stability = 0.5;         // Creative=0.0, Natural=0.5, Robust=1.0
     private String voiceId = "pNInz6obpgDQGcFmaJgB"; // Default: Adam
     private double gapSeconds = 0.4;        // Default 0.4s
+    private Double speed = 1.0;             // Speaking speed: 1.0=normal, 1.1=fast, 1.25=very fast
 
     public JobCreateRequest() {
     }
@@ -61,6 +62,14 @@ public class JobCreateRequest {
 
     public void setGapSeconds(double gapSeconds) {
         this.gapSeconds = gapSeconds;
+    }
+
+    public Double getSpeed() {
+        return speed != null && speed > 0 ? speed : 1.0;
+    }
+
+    public void setSpeed(Double speed) {
+        this.speed = speed;
     }
 }
 

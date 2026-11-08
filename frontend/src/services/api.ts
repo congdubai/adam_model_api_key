@@ -106,14 +106,58 @@ export async function checkFfmpegStatus(): Promise<FfmpegStatus> {
   return res.json();
 }
 
-export function getDownloadUrl(jobId: string, format: 'wav' | 'mp3' | 'srt' | 'json' | 'csv'): string {
+export function getDownloadUrl(jobId: string, format: 'wav' | 'mp3' | 'srt' | 'json' | 'csv' | 'zip'): string {
   return `${API_BASE}/jobs/${jobId}/download/${format}`;
 }
 
-export function getAudioStreamUrl(jobId: string, version?: string | number): string {
+export function getSegmentDownloadUrl(jobId: string, segmentIndex: number): string {
+  return `${API_BASE}/jobs/${jobId}/segments/${segmentIndex}/download`;
+}
+
+export function getAudioStreamUrl(jobId: string, version?: string | number, format?: 'mp3' | 'wav'): string {
+  const params = new URLSearchParams();
   if (version !== undefined && version !== null) {
-    return `${API_BASE}/jobs/${jobId}/audio?v=${version}`;
+    params.set('v', String(version));
   }
-  return `${API_BASE}/jobs/${jobId}/audio`;
+  if (format) {
+    params.set('format', format);
+  }
+  const qs = params.toString();
+  return `${API_BASE}/jobs/${jobId}/audio${qs ? `?${qs}` : ''}`;
+}
+
+// CapCut Direct Integration APIs
+export async function detectCapCut(): Promise<import('../types').CapCutDetectResult> {
+  const res = await fetch(`${API_BASE}/capcut/detect`);
+  if (!res.ok) throw new Error('Không thể kiểm tra CapCut');
+  return res.json();
+}
+
+export async function fetchCapCutProjects(): Promise<import('../types').CapCutProject[]> {
+  const res = await fetch(`${API_BASE}/capcut/projects`);
+  if (!res.ok) throw new Error('Không thể lấy danh sách project CapCut');
+  return res.json();
+}
+
+export async function applyToCapCut(req: import('../types').CapCutApplyRequest): Promise<import('../types').CapCutApplyResponse> {
+  const res = await fetch(`${API_BASE}/capcut/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Lỗi đồng bộ vào CapCut');
+  }
+  return res.json();
+}
+
+export async function openCapCutFolder(path: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/capcut/open-folder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+  return res.ok;
 }
 

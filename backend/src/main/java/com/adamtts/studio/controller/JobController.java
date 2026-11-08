@@ -69,48 +69,87 @@ public class JobController {
     }
 
     @GetMapping("/{id}/audio")
-    public ResponseEntity<?> getAudioStream(
+    public void getAudioStream(
             @PathVariable String id,
-            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
-        File file = jobManagerService.getOutputFile(id, "mp3");
+            @RequestParam(value = "format", required = false) String format,
+            jakarta.servlet.http.HttpServletRequest request,
+            jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        File file = null;
+        if (format != null && !format.isBlank()) {
+            file = jobManagerService.getOutputFile(id, format);
+        }
+        if (file == null || !file.exists()) {
+            file = jobManagerService.getOutputFile(id, "mp3");
+        }
         if (file == null || !file.exists()) {
             file = jobManagerService.getOutputFile(id, "wav");
         }
         if (file == null || !file.exists()) {
-            return ResponseEntity.notFound().build();
+            response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_NOT_FOUND);
+            return;
         }
 
-        Resource resource = new FileSystemResource(file);
-        MediaType mediaType = MediaType.parseMediaType(file.getName().endsWith(".mp3") ? "audio/mpeg" : "audio/wav");
+        String contentType = file.getName().endsWith(".mp3") ? "audio/mpeg" : "audio/wav";
         long fileLength = file.length();
+        String rangeHeader = request.getHeader(HttpHeaders.RANGE);
 
-        if (rangeHeader != null) {
-            try {
-                java.util.List<org.springframework.http.HttpRange> ranges = org.springframework.http.HttpRange.parseRanges(rangeHeader);
-                if (!ranges.isEmpty()) {
-                    org.springframework.http.HttpRange range = ranges.get(0);
-                    long start = range.getRangeStart(fileLength);
-                    long end = range.getRangeEnd(fileLength);
-                    long rangeLength = end - start + 1;
-                    org.springframework.core.io.support.ResourceRegion region =
-                            new org.springframework.core.io.support.ResourceRegion(resource, start, rangeLength);
+        long start = 0;
+        long end = fileLength - 1;
+        boolean isRange = false;
 
-                    return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
-                            .contentType(mediaType)
-                            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                            .header(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + fileLength)
-                            .body(region);
+        if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+            String cleanRange = rangeHeader.substring(6).trim();
+            int dashIndex = cleanRange.indexOf('-');
+            if (dashIndex != -1) {
+                String startPart = cleanRange.substring(0, dashIndex).trim();
+                String endPart = cleanRange.substring(dashIndex + 1).trim();
+                try {
+                    if (!startPart.isEmpty()) {
+                        start = Long.parseLong(startPart);
+                    }
+                    if (!endPart.isEmpty()) {
+                        end = Long.parseLong(endPart);
+                    }
+                    if (end >= fileLength) {
+                        end = fileLength - 1;
+                    }
+                    if (start <= end && start >= 0) {
+                        isRange = true;
+                    }
+                } catch (NumberFormatException ignored) {
                 }
-            } catch (Exception ignored) {
             }
         }
 
-        return ResponseEntity.ok()
-                .contentType(mediaType)
-                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(fileLength))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.getName() + "\"")
-                .body(resource);
+        long rangeLength = end - start + 1;
+
+        response.setContentType(contentType);
+        response.setHeader(HttpHeaders.ACCEPT_RANGES, "bytes");
+
+        if (isRange) {
+            response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_PARTIAL_CONTENT);
+            response.setHeader(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + fileLength);
+            response.setHeader(HttpHeaders.CONTENT_LENGTH, String.valueOf(rangeLength));
+        } else {
+            response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_OK);
+            response.setHeader(HttpHeaders.CONTENT_LENGTH, String.valueOf(fileLength));
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.getName() + "\"");
+        }
+
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "r");
+             java.io.OutputStream os = response.getOutputStream()) {
+            raf.seek(start);
+            byte[] buffer = new byte[16384];
+            long remaining = rangeLength;
+            while (remaining > 0) {
+                int toRead = (int) Math.min(buffer.length, remaining);
+                int read = raf.read(buffer, 0, toRead);
+                if (read == -1) break;
+                os.write(buffer, 0, read);
+                remaining -= read;
+            }
+            os.flush();
+        }
     }
 
     @GetMapping("/{id}/download/{format}")
@@ -126,10 +165,26 @@ public class JobController {
             case "srt" -> "text/plain; charset=utf-8";
             case "json" -> "application/json; charset=utf-8";
             case "csv" -> "text/csv; charset=utf-8";
+            case "zip" -> "application/zip";
             default -> "application/octet-stream";
         };
 
         String filename = "adam_tts_" + id.substring(0, 8) + "." + format.toLowerCase();
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(new FileSystemResource(file));
+    }
+
+    @GetMapping("/{id}/segments/{index}/download")
+    public ResponseEntity<Resource> downloadSegment(@PathVariable String id, @PathVariable int index) {
+        File file = jobManagerService.getSegmentFile(id, index);
+        if (file == null || !file.exists()) {
+            return ResponseEntity.notFound().build();
+        }
+        String ext = file.getName().endsWith(".wav") ? "wav" : "mp3";
+        String contentType = ext.equals("wav") ? "audio/wav" : "audio/mpeg";
+        String filename = String.format("adam_seg_%02d.%s", index, ext);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")

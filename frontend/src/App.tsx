@@ -33,6 +33,7 @@ export const App: React.FC = () => {
   const [stability, setStability] = useState(0.5);
   const [voiceId, setVoiceId] = useState('pNInz6obpgDQGcFmaJgB'); // Adam
   const [gapSeconds, setGapSeconds] = useState(0.4);
+  const [speed, setSpeed] = useState(1.0);
 
   // Job state
   const [activeJob, setActiveJob] = useState<JobDetail | null>(null);
@@ -188,6 +189,7 @@ export const App: React.FC = () => {
         stability,
         voiceId,
         gapSeconds,
+        speed,
       });
       setActiveJob(newJob);
     } catch (err: any) {
@@ -304,6 +306,8 @@ export const App: React.FC = () => {
               onChangeVoiceId={setVoiceId}
               gapSeconds={gapSeconds}
               onChangeGapSeconds={setGapSeconds}
+              speed={speed}
+              onChangeSpeed={setSpeed}
               isGenerating={isGenerating}
               onStartGenerate={handleStartGenerate}
               disabled={!text.trim() || keys.length === 0}

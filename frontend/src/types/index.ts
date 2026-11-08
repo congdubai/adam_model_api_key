@@ -56,6 +56,7 @@ export interface JobDetail {
   voiceId: string;
   stability: number;
   gapSeconds: number;
+  speed?: number;
   splitMode: 'LINE' | 'PARAGRAPH';
   totalSegments: number;
   completedSegments: number;
@@ -75,10 +76,46 @@ export interface JobCreateRequest {
   stability: number;
   voiceId: string;
   gapSeconds: number;
+  speed?: number;
 }
 
 export interface FfmpegStatus {
   available: boolean;
   message: string;
+}
+
+export interface CapCutDetectResult {
+  available: boolean;
+  capcutDir: string;
+  isRunning: boolean;
+}
+
+export interface CapCutProject {
+  id: string;
+  name: string;
+  folderPath: string;
+  clipCount: number;
+  readable: boolean;
+  modifiedTime: number;
+  durationSeconds: number;
+}
+
+export interface CapCutApplyRequest {
+  jobId: string;
+  projectFolder: string;
+  syncVideoClips: boolean;
+  addAudioTrack: boolean;
+  addSubtitleTrack: boolean;
+  clearCache: boolean;
+}
+
+export interface CapCutApplyResponse {
+  success: boolean;
+  message: string;
+  projectFolder: string;
+  syncedClips: number;
+  addedSubtitles: number;
+  audioAdded: boolean;
+  capcutWasRunning: boolean;
 }
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, Square, Play, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Loader2, Square, Play, AlertCircle, AlertTriangle, CheckCircle } from 'lucide-react';
 import { JobDetail } from '../types';
 
 interface JobProgressProps {
@@ -14,6 +14,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({ job, onStopJob, onResu
   const isPausedNoKeys = job.status === 'PAUSED_NO_KEYS';
   const isStopped = job.status === 'STOPPED';
   const isFailed = job.status === 'FAILED';
+  const isCompleted = job.status === 'COMPLETED';
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
@@ -25,6 +26,8 @@ export const JobProgress: React.FC<JobProgressProps> = ({ job, onStopJob, onResu
                 ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-600'
                 : isPausedNoKeys
                 ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-600'
+                : isCompleted
+                ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600'
                 : isFailed
                 ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600'
@@ -34,6 +37,8 @@ export const JobProgress: React.FC<JobProgressProps> = ({ job, onStopJob, onResu
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : isPausedNoKeys ? (
               <AlertTriangle className="w-5 h-5" />
+            ) : isCompleted ? (
+              <CheckCircle className="w-5 h-5" />
             ) : isFailed ? (
               <AlertCircle className="w-5 h-5" />
             ) : (
@@ -50,6 +55,8 @@ export const JobProgress: React.FC<JobProgressProps> = ({ job, onStopJob, onResu
                   ? 'Tạm dừng: Hết API Key khả dụng'
                   : isStopped
                   ? 'Tiến trình đã dừng'
+                  : isCompleted
+                  ? 'Lồng tiếng hoàn tất'
                   : 'Tiến trình thất bại'}
               </h3>
               <span className="text-xs px-2 py-0.5 rounded-full font-mono bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
@@ -63,6 +70,8 @@ export const JobProgress: React.FC<JobProgressProps> = ({ job, onStopJob, onResu
                 ? 'Các đoạn đã hoàn thành được bảo lưu toàn vẹn. Hãy thêm key mới để tiếp tục.'
                 : isStopped
                 ? 'Đã bảo lưu các đoạn đã xong.'
+                : isCompleted
+                ? 'Đã xử lý xong toàn bộ kịch bản và ghép timeline thành công.'
                 : 'Đã có lỗi xảy ra trong quá trình xử lý.'}
             </p>
           </div>
@@ -105,6 +114,8 @@ export const JobProgress: React.FC<JobProgressProps> = ({ job, onStopJob, onResu
                 ? 'bg-amber-500'
                 : isFailed
                 ? 'bg-rose-500'
+                : isCompleted
+                ? 'bg-emerald-500'
                 : 'bg-gradient-to-r from-brand-500 to-indigo-600'
             }`}
             style={{ width: `${percent}%` }}

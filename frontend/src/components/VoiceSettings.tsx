@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sliders, Mic, Info, Sparkles } from 'lucide-react';
+import { Sliders, Mic, Info, Sparkles, Zap } from 'lucide-react';
 
 interface VoiceSettingsProps {
   modelId: string;
@@ -10,6 +10,8 @@ interface VoiceSettingsProps {
   onChangeVoiceId: (voiceId: string) => void;
   gapSeconds: number;
   onChangeGapSeconds: (gap: number) => void;
+  speed: number;
+  onChangeSpeed: (val: number) => void;
   isGenerating: boolean;
   onStartGenerate: () => void;
   disabled: boolean;
@@ -36,6 +38,8 @@ export const VoiceSettings: React.FC<VoiceSettingsProps> = ({
   onChangeVoiceId,
   gapSeconds,
   onChangeGapSeconds,
+  speed,
+  onChangeSpeed,
   isGenerating,
   onStartGenerate,
   disabled,
@@ -176,6 +180,77 @@ export const VoiceSettings: React.FC<VoiceSettingsProps> = ({
           />
           <span className="text-xs text-slate-500">giây</span>
         </div>
+      </div>
+
+      {/* Speaking Speed */}
+      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            <span>Tốc độ nói (Speaking Speed)</span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-brand-100 dark:bg-brand-950 text-brand-700 dark:text-brand-300 font-mono font-bold">
+              {speed}x
+            </span>
+          </label>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+            {speed === 1.0 ? 'Tốc độ gốc' : speed > 1.0 ? `Nhanh hơn ${(Math.round((speed - 1.0) * 100))}%` : `Chậm hơn ${(Math.round((1.0 - speed) * 100))}%`}
+          </span>
+        </div>
+
+        {/* Preset quick buttons */}
+        <div className="grid grid-cols-5 gap-1.5">
+          {[
+            { val: 0.9, label: '0.9x', desc: 'Chậm' },
+            { val: 1.0, label: '1.0x', desc: 'Chuẩn' },
+            { val: 1.1, label: '1.1x', desc: 'Hơi nhanh' },
+            { val: 1.15, label: '1.15x', desc: 'TikTok/Review' },
+            { val: 1.25, label: '1.25x', desc: 'Nhanh' },
+          ].map((item) => {
+            const isSelected = Math.abs(speed - item.val) < 0.01;
+            return (
+              <button
+                key={item.val}
+                type="button"
+                onClick={() => onChangeSpeed(item.val)}
+                className={`py-1.5 px-1 rounded-xl text-center border transition ${
+                  isSelected
+                    ? 'border-brand-500 bg-brand-50/70 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-bold ring-2 ring-brand-500/20'
+                    : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <div className="text-xs font-bold leading-tight">{item.label}</div>
+                <div className="text-[10px] text-slate-400 leading-tight mt-0.5 truncate">{item.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Range slider & precise input */}
+        <div className="flex items-center gap-3 pt-1">
+          <input
+            type="range"
+            min="0.75"
+            max="1.5"
+            step="0.05"
+            value={speed}
+            onChange={(e) => onChangeSpeed(parseFloat(e.target.value))}
+            className="flex-1 accent-brand-600 cursor-pointer"
+          />
+          <input
+            type="number"
+            min="0.5"
+            max="2.0"
+            step="0.05"
+            value={speed}
+            onChange={(e) => onChangeSpeed(parseFloat(e.target.value) || 1.0)}
+            className="w-16 text-xs font-mono font-semibold p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-center outline-none focus:ring-1 focus:ring-brand-500"
+          />
+          <span className="text-xs text-slate-500">x</span>
+        </div>
+
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          Chỉnh tốc độ qua thuật toán FFmpeg (giữ nguyên cao độ và cảm xúc gốc), tự động co/dãn timeline chuẩn xác từng mili-giây cho CapCut.
+        </p>
       </div>
 
       {/* Big Action CTA */}

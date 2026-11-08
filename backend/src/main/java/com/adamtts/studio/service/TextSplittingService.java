@@ -16,9 +16,10 @@ public class TextSplittingService {
     private static final Pattern EMOTION_TAG_PATTERN = Pattern.compile("\\[[^\\]]*\\]");
     // Sentence boundary regex: punctuation followed by space or end of text
     private static final Pattern SENTENCE_SPLIT_PATTERN = Pattern.compile("(?<=[.!?…])\\s+");
-    // Timeline tag regex at beginning of segment: [0, 30], [0 , 30], [45, 60], [45], [00:45, 01:10], [1:30]
+    // Timeline tag regex at beginning of segment: [0, 30], [0 , 30], [45, 60], [45], [00:45, 01:10], [1:30], [00:00 - 00:15]
     private static final Pattern TIMELINE_TAG_PATTERN = Pattern.compile(
-            "^\\[\\s*(\\d+(?::\\d+)?(?:\\.\\d+)?)\\s*(?:,\\s*(\\d+(?::\\d+)?(?:\\.\\d+)?))?\\s*\\]\\s*"
+            "^\\[\\s*(\\d+(?::\\d+){0,2}(?:\\.\\d+)?)\\s*(?:(?:,|->|-|–|to)\\s*(\\d+(?::\\d+){0,2}(?:\\.\\d+)?))?\\s*\\]\\s*",
+            Pattern.CASE_INSENSITIVE
     );
 
     public record ParsedSegment(
@@ -86,8 +87,53 @@ public class TextSplittingService {
         return MAX_CHARS_DEFAULT;
     }
 
+    public boolean hasTimelineAnchors(String text) {
+        if (text == null || text.isBlank()) return false;
+        String[] lines = text.split("\\r?\\n");
+        for (String line : lines) {
+            if (TIMELINE_TAG_PATTERN.matcher(line.trim()).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public List<String> splitByTimelineAnchors(String text) {
+        List<String> chunks = new ArrayList<>();
+        String[] lines = text.split("\\r?\\n");
+        StringBuilder currentChunk = new StringBuilder();
+
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (TIMELINE_TAG_PATTERN.matcher(trimmed).find()) {
+                if (currentChunk.length() > 0) {
+                    chunks.add(currentChunk.toString().trim());
+                    currentChunk.setLength(0);
+                }
+                currentChunk.append(trimmed);
+            } else {
+                if (currentChunk.length() > 0) {
+                    currentChunk.append(" ").append(trimmed);
+                } else {
+                    currentChunk.append(trimmed);
+                }
+            }
+        }
+
+        if (currentChunk.length() > 0) {
+            chunks.add(currentChunk.toString().trim());
+        }
+
+        return chunks;
+    }
+
     /**
      * Splits raw input text into list of segments based on mode and model character limits.
+     * If text contains timeline tags like [00:00, 00:15], automatically splits by timeline anchors
+     * so that scene descriptions spanning multiple lines stay in the same segment.
      *
      * @param rawText   The raw input text
      * @param splitMode "LINE" or "PARAGRAPH"
@@ -102,7 +148,9 @@ public class TextSplittingService {
         int maxChars = getMaxCharsForModel(modelId);
         List<String> rawChunks = new ArrayList<>();
 
-        if ("LINE".equalsIgnoreCase(splitMode)) {
+        if (hasTimelineAnchors(rawText)) {
+            rawChunks = splitByTimelineAnchors(rawText);
+        } else if ("LINE".equalsIgnoreCase(splitMode)) {
             String[] lines = rawText.split("\\r?\\n");
             for (String line : lines) {
                 String trimmed = line.trim();
@@ -121,8 +169,31 @@ public class TextSplittingService {
             }
         }
 
+        List<String> normalizedChunks = new ArrayList<>();
+        for (int i = 0; i < rawChunks.size(); i++) {
+            String chunk = rawChunks.get(i).trim();
+            // Clean stray leading closing brackets or punctuation e.g. ][curious]
+            chunk = chunk.replaceAll("^[\\]\\)\\>\\}\\s]+", "");
+
+            if (chunk.isEmpty()) {
+                continue;
+            }
+
+            // If this chunk is only an emotion tag (not a pause) and there is a next chunk, merge with next
+            String stripped = stripEmotionTags(chunk);
+            String lower = chunk.toLowerCase();
+            boolean isPauseTag = lower.contains("pause") || lower.contains("nghỉ");
+
+            if (stripped.isEmpty() && !isPauseTag && i + 1 < rawChunks.size()) {
+                rawChunks.set(i + 1, chunk + " " + rawChunks.get(i + 1));
+                continue;
+            }
+
+            normalizedChunks.add(chunk);
+        }
+
         List<String> finalSegments = new ArrayList<>();
-        for (String chunk : rawChunks) {
+        for (String chunk : normalizedChunks) {
             if (chunk.length() <= maxChars) {
                 finalSegments.add(chunk);
             } else {

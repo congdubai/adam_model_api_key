@@ -88,6 +88,7 @@ public class JobManagerService {
         job.setVoiceId(req.getVoiceId());
         job.setStability(req.getStability());
         job.setGapSeconds(req.getGapSeconds());
+        job.setSpeed(req.getSpeed());
         job.setSplitMode(req.getSplitMode());
         job.setTotalSegments(rawSegments.size());
         job.setCompletedSegments(0);
@@ -190,6 +191,30 @@ public class JobManagerService {
                     seg.setStatus(SegmentStatus.COMPLETED);
                     seg.setErrorMessage(null);
 
+                } else if (seg.getCleanText() == null || seg.getCleanText().isBlank()) {
+                    // Segment contains only pause/emotion tag without spoken text (e.g. [long pause])
+                    // Generate local silence instead of calling ElevenLabs to prevent HTTP 400 crash!
+                    double pauseDuration = 1.0;
+                    String rawLower = seg.getText().toLowerCase();
+                    if (rawLower.contains("long pause") || rawLower.contains("nghỉ dài")) {
+                        pauseDuration = 2.5;
+                    } else if (rawLower.contains("short pause") || rawLower.contains("nghỉ ngắn")) {
+                        pauseDuration = 1.0;
+                    } else if (rawLower.contains("pause") || rawLower.contains("nghỉ")) {
+                        pauseDuration = 1.5;
+                    }
+
+                    log.info("Generating silence segment {}/{} (duration: {}s) for tag '{}'",
+                            i + 1, segments.size(), pauseDuration, seg.getText());
+
+                    File savedFile = audioProcessingService.generateSilenceMp3(seg.getAudioHash(), pauseDuration);
+                    seg.setFromCache(false);
+                    seg.setKeyMasked("Khoảng lặng");
+                    seg.setAudioFilePath(savedFile.getAbsolutePath());
+                    seg.setDurationSeconds(pauseDuration);
+                    seg.setStatus(SegmentStatus.COMPLETED);
+                    seg.setErrorMessage(null);
+
                 } else {
                     // Synthesize using key pool with rotation
                     log.info("Synthesizing segment {}/{} (length: {})", i + 1, segments.size(), seg.getText().length());
@@ -218,15 +243,6 @@ public class JobManagerService {
             // Check if all segments are completed
             boolean allDone = segments.stream().allMatch(s -> s.getStatus() == SegmentStatus.COMPLETED);
             if (allDone) {
-                // Calculate sample-accurate timeline
-                timelineService.calculateTimestamps(segments, job.getGapSeconds());
-
-                // Prepare segment files for merging
-                List<File> audioFiles = new ArrayList<>();
-                for (SegmentEntity seg : segments) {
-                    audioFiles.add(new File(seg.getAudioFilePath()));
-                }
-
                 File workDir = new File(jobDir, "work");
                 File outputWav = new File(jobDir, "output.wav");
                 File outputMp3 = new File(jobDir, "output.mp3");
@@ -234,8 +250,15 @@ public class JobManagerService {
                 File outputJson = new File(jobDir, "timeline.json");
                 File outputCsv = new File(jobDir, "timeline.csv");
 
-                // Merge audio with exact timeline spacing (supports [0, 20], [45, 60] time codes)
-                audioProcessingService.mergeSegmentsWithExactTiming(segments, workDir, outputWav, outputMp3);
+                // 1. Prepare normalized segment WAVs with optional speed adjustment (atempo)
+                // This updates seg.setDurationSeconds() with the exact speed-adjusted duration
+                audioProcessingService.prepareSegmentWavs(segments, workDir, job.getSpeed());
+
+                // 2. Calculate sample-accurate timeline with updated durations
+                timelineService.calculateTimestamps(segments, job.getGapSeconds());
+
+                // 3. Merge audio with exact timeline spacing (supports [0, 20], [45, 60] time codes)
+                audioProcessingService.mergePreparedSegmentsWithExactTiming(segments, workDir, outputWav, outputMp3);
 
                 // Export SRT, JSON, CSV
                 timelineService.writeSrtFile(segments, outputSrt);
@@ -283,24 +306,38 @@ public class JobManagerService {
         // Invalidate cache for this segment
         audioProcessingService.deleteFromCache(seg.getAudioHash());
 
-        // Re-synthesize
-        ApiKeyService.TtsResult result = apiKeyService.executeTtsWithKeySwitching(
-                job.getVoiceId(), seg.getText(), job.getModelId(), job.getStability()
-        );
-
         try {
-            File saved = audioProcessingService.saveToCache(seg.getAudioHash(), result.audioData());
-            seg.setFromCache(false);
-            seg.setKeyIdUsed(result.keyId());
-            seg.setKeyMasked(result.keyMasked());
-            seg.setAudioFilePath(saved.getAbsolutePath());
-            double duration = audioProcessingService.getAudioDuration(saved);
-            seg.setDurationSeconds(duration);
+            File saved;
+            if (seg.getCleanText() == null || seg.getCleanText().isBlank()) {
+                double pauseDuration = 1.0;
+                String rawLower = seg.getText().toLowerCase();
+                if (rawLower.contains("long pause") || rawLower.contains("nghỉ dài")) {
+                    pauseDuration = 2.5;
+                } else if (rawLower.contains("short pause") || rawLower.contains("nghỉ ngắn")) {
+                    pauseDuration = 1.0;
+                } else if (rawLower.contains("pause") || rawLower.contains("nghỉ")) {
+                    pauseDuration = 1.5;
+                }
+                saved = audioProcessingService.generateSilenceMp3(seg.getAudioHash(), pauseDuration);
+                seg.setFromCache(false);
+                seg.setKeyMasked("Khoảng lặng");
+                seg.setAudioFilePath(saved.getAbsolutePath());
+                seg.setDurationSeconds(pauseDuration);
+            } else {
+                ApiKeyService.TtsResult result = apiKeyService.executeTtsWithKeySwitching(
+                        job.getVoiceId(), seg.getText(), job.getModelId(), job.getStability()
+                );
+                saved = audioProcessingService.saveToCache(seg.getAudioHash(), result.audioData());
+                seg.setFromCache(false);
+                seg.setKeyIdUsed(result.keyId());
+                seg.setKeyMasked(result.keyMasked());
+                seg.setAudioFilePath(saved.getAbsolutePath());
+                double duration = audioProcessingService.getAudioDuration(saved);
+                seg.setDurationSeconds(duration);
+            }
+
             seg.setStatus(SegmentStatus.COMPLETED);
             seg.setErrorMessage(null);
-
-            // Recompute timeline for all segments
-            timelineService.calculateTimestamps(job.getSegments(), job.getGapSeconds());
 
             // Re-merge entire audio file
             File jobDir = new File(jobsDir, jobId);
@@ -311,7 +348,14 @@ public class JobManagerService {
             File outputJson = new File(jobDir, "timeline.json");
             File outputCsv = new File(jobDir, "timeline.csv");
 
-            audioProcessingService.mergeSegmentsWithExactTiming(job.getSegments(), workDir, outputWav, outputMp3);
+            // 1. Prepare normalized segment WAVs with speed filter
+            audioProcessingService.prepareSegmentWavs(job.getSegments(), workDir, job.getSpeed());
+
+            // 2. Recompute timeline for all segments
+            timelineService.calculateTimestamps(job.getSegments(), job.getGapSeconds());
+
+            // 3. Merge audio
+            audioProcessingService.mergePreparedSegmentsWithExactTiming(job.getSegments(), workDir, outputWav, outputMp3);
             timelineService.writeSrtFile(job.getSegments(), outputSrt);
             timelineService.writeTimelineJsonFile(job.getSegments(), outputJson);
             timelineService.writeTimelineCsvFile(job.getSegments(), outputCsv);
@@ -324,6 +368,10 @@ public class JobManagerService {
         } catch (IOException e) {
             throw new RuntimeException("Lỗi khi đọc lại đoạn: " + e.getMessage(), e);
         }
+    }
+
+    public JobEntity getActiveJob(String jobId) {
+        return activeJobs.get(jobId);
     }
 
     public JobDetailDto getJobDetail(String jobId) {
@@ -343,20 +391,92 @@ public class JobManagerService {
     }
 
     public File getOutputFile(String jobId, String format) {
-        JobEntity job = activeJobs.get(jobId);
-        if (job == null) {
+        File jobDir = new File(jobsDir, jobId);
+        if (!jobDir.exists()) {
             return null;
         }
 
-        File jobDir = new File(jobsDir, jobId);
         return switch (format.toLowerCase()) {
             case "wav" -> new File(jobDir, "output.wav");
             case "mp3" -> new File(jobDir, "output.mp3");
             case "srt" -> new File(jobDir, "output.srt");
             case "json" -> new File(jobDir, "timeline.json");
             case "csv" -> new File(jobDir, "timeline.csv");
+            case "zip" -> {
+                File zipFile = new File(jobDir, "segments.zip");
+                JobEntity job = activeJobs.get(jobId);
+                createSegmentsZip(job, zipFile);
+                yield zipFile;
+            }
             default -> null;
         };
+    }
+
+    public File getSegmentFile(String jobId, int segmentIndex) {
+        JobEntity job = activeJobs.get(jobId);
+        if (job == null || job.getSegments() == null) {
+            return null;
+        }
+        int idx0 = segmentIndex - 1;
+        if (idx0 < 0 || idx0 >= job.getSegments().size()) {
+            return null;
+        }
+        File jobDir = new File(jobsDir, jobId);
+        File workDir = new File(jobDir, "work");
+        File segWav = new File(workDir, "seg_" + idx0 + ".wav");
+        if (segWav.exists() && segWav.length() > 0) {
+            return segWav;
+        }
+        SegmentEntity seg = job.getSegments().get(idx0);
+        if (seg.getAudioFilePath() != null) {
+            File rawMp3 = new File(seg.getAudioFilePath());
+            if (rawMp3.exists()) {
+                return rawMp3;
+            }
+        }
+        return null;
+    }
+
+    private void createSegmentsZip(JobEntity job, File zipFile) {
+        if (job == null || job.getSegments() == null) return;
+        File jobDir = new File(jobsDir, job.getId());
+        File workDir = new File(jobDir, "work");
+
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(new java.io.FileOutputStream(zipFile))) {
+            for (int i = 0; i < job.getSegments().size(); i++) {
+                SegmentEntity seg = job.getSegments().get(i);
+                File segFile = new File(workDir, "seg_" + i + ".wav");
+                if (!segFile.exists() || segFile.length() == 0) {
+                    if (seg.getAudioFilePath() != null) {
+                        segFile = new File(seg.getAudioFilePath());
+                    }
+                }
+                if (segFile != null && segFile.exists()) {
+                    String ext = segFile.getName().endsWith(".wav") ? ".wav" : ".mp3";
+                    String entryName = String.format("Doan_%02d_tu_%.1fs_den_%.1fs%s",
+                            i + 1, seg.getStartTimeSeconds(), seg.getEndTimeSeconds(), ext);
+                    zos.putNextEntry(new java.util.zip.ZipEntry(entryName));
+                    java.nio.file.Files.copy(segFile.toPath(), zos);
+                    zos.closeEntry();
+                }
+            }
+
+            File srtFile = new File(jobDir, "output.srt");
+            if (srtFile.exists()) {
+                zos.putNextEntry(new java.util.zip.ZipEntry("Phu_de_CapCut.srt"));
+                java.nio.file.Files.copy(srtFile.toPath(), zos);
+                zos.closeEntry();
+            }
+
+            File csvFile = new File(jobDir, "timeline.csv");
+            if (csvFile.exists()) {
+                zos.putNextEntry(new java.util.zip.ZipEntry("Timeline_CapCut.csv"));
+                java.nio.file.Files.copy(csvFile.toPath(), zos);
+                zos.closeEntry();
+            }
+        } catch (java.io.IOException e) {
+            log.error("Failed to create zip for job {}", job.getId(), e);
+        }
     }
 
     private synchronized void saveJob(JobEntity job) {
@@ -395,6 +515,7 @@ public class JobManagerService {
         dto.setVoiceId(job.getVoiceId());
         dto.setStability(job.getStability());
         dto.setGapSeconds(job.getGapSeconds());
+        dto.setSpeed(job.getSpeed());
         dto.setSplitMode(job.getSplitMode());
         dto.setTotalSegments(job.getTotalSegments());
         dto.setCompletedSegments(job.getCompletedSegments());

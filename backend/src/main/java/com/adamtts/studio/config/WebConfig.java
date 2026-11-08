@@ -23,6 +23,11 @@ public class WebConfig implements WebMvcConfigurer {
                 .maxAge(3600);
     }
 
+    @Override
+    public void extendMessageConverters(java.util.List<org.springframework.http.converter.HttpMessageConverter<?>> converters) {
+        converters.add(new org.springframework.http.converter.ResourceRegionHttpMessageConverter());
+    }
+
     @Bean
     public RestClient restClient() {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();

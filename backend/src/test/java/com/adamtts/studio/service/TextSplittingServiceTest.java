@@ -109,5 +109,29 @@ class TextSplittingServiceTest {
         assertNull(p5.targetEndTime());
         assertEquals("Không có mốc thời gian", p5.spokenText());
     }
+
+    @Test
+    @DisplayName("Tự động gom cụm văn bản theo mốc timeline [00:00, 00:15] và [00:24, 00:30]")
+    void testSplitByTimelineAnchorsMultiLine() {
+        String input = "[00:00, 00:15] Đoạn 1 câu mở đầu.\r\n"
+                + "Đây là câu tiếp theo của đoạn 1 mà không bị tách thành file riêng.\r\n\r\n"
+                + "[00:24, 00:30] Đoạn 2 câu kết thúc.\r\n"
+                + "Cảm ơn các bạn đã theo dõi!";
+
+        List<String> segments = service.splitText(input, "LINE", "eleven_v3");
+        assertEquals(2, segments.size());
+        assertTrue(segments.get(0).startsWith("[00:00, 00:15]"));
+        assertTrue(segments.get(0).contains("Đoạn 1 câu mở đầu. Đây là câu tiếp theo"));
+        assertTrue(segments.get(1).startsWith("[00:24, 00:30]"));
+        assertTrue(segments.get(1).contains("Đoạn 2 câu kết thúc. Cảm ơn các bạn"));
+
+        TextSplittingService.ParsedSegment p1 = service.parseSegmentTiming(segments.get(0));
+        assertEquals(0.0, p1.targetStartTime());
+        assertEquals(15.0, p1.targetEndTime());
+
+        TextSplittingService.ParsedSegment p2 = service.parseSegmentTiming(segments.get(1));
+        assertEquals(24.0, p2.targetStartTime());
+        assertEquals(30.0, p2.targetEndTime());
+    }
 }
 

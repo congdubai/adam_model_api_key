@@ -12,7 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.List;
+import com.adamtts.studio.model.SegmentEntity;
 
 @Service
 public class AudioProcessingService {
@@ -119,6 +121,26 @@ public class AudioProcessingService {
     }
 
     /**
+     * Generates a silence MP3 file directly in cache without calling ElevenLabs API.
+     */
+    public File generateSilenceMp3(String hash, double durationSeconds) {
+        requireFfmpeg();
+        File file = new File(cacheDir, hash + ".mp3");
+        List<String> silenceCmd = List.of(
+                ffmpegCmd,
+                "-y",
+                "-f", "lavfi",
+                "-i", "anullsrc=r=44100:cl=mono",
+                "-t", String.format(java.util.Locale.US, "%.4f", durationSeconds),
+                "-c:a", "libmp3lame",
+                "-b:a", "128k",
+                file.getAbsolutePath()
+        );
+        executeProcess(silenceCmd, "Tạo khoảng lặng MP3 " + durationSeconds + "s");
+        return file;
+    }
+
+    /**
      * Deletes a cached audio file (e.g. for segment regenerate).
      */
     public boolean deleteFromCache(String hash) {
@@ -165,9 +187,56 @@ public class AudioProcessingService {
     }
 
     /**
-     * Concatenates audio segments with exact timeline spacing (supporting custom timeline anchors like [0, 20] and [45, 60]).
+     * Converts raw MP3 segments to normalized 44.1kHz mono WAV files, optionally applying speed adjustment via FFmpeg atempo.
+     * Updates each segment's durationSeconds to reflect the exact speed-adjusted audio duration.
      */
-    public void mergeSegmentsWithExactTiming(List<com.adamtts.studio.model.SegmentEntity> segments, File workDir, File outputWav, File outputMp3) throws IOException {
+    public void prepareSegmentWavs(List<SegmentEntity> segments, File workDir, Double speed) {
+        requireFfmpeg();
+
+        if (segments == null || segments.isEmpty()) {
+            return;
+        }
+
+        if (!workDir.exists()) {
+            workDir.mkdirs();
+        }
+
+        for (int i = 0; i < segments.size(); i++) {
+            SegmentEntity seg = segments.get(i);
+            File mp3 = new File(seg.getAudioFilePath());
+            File segmentWav = new File(workDir, "seg_" + i + ".wav");
+
+            List<String> convertCmd = new ArrayList<>();
+            convertCmd.add(ffmpegCmd);
+            convertCmd.add("-y");
+            convertCmd.add("-i");
+            convertCmd.add(mp3.getAbsolutePath());
+
+            if (speed != null && Math.abs(speed - 1.0) > 0.01) {
+                convertCmd.add("-filter:a");
+                convertCmd.add(String.format(java.util.Locale.US, "atempo=%.2f", speed));
+            }
+
+            convertCmd.add("-ar");
+            convertCmd.add("44100");
+            convertCmd.add("-ac");
+            convertCmd.add("1");
+            convertCmd.add("-c:a");
+            convertCmd.add("pcm_s16le");
+            convertCmd.add(segmentWav.getAbsolutePath());
+
+            String actionDesc = "Chuẩn hoá đoạn " + (i + 1) + (speed != null && Math.abs(speed - 1.0) > 0.01 ? " (tốc độ " + speed + "x)" : "");
+            executeProcess(convertCmd, actionDesc);
+
+            double actualDuration = getAudioDuration(segmentWav);
+            seg.setDurationSeconds(actualDuration);
+        }
+    }
+
+    /**
+     * Concatenates pre-converted audio segments with exact timeline spacing (supporting custom timeline anchors like [0, 20] and [45, 60]).
+     */
+    public void mergePreparedSegmentsWithExactTiming(List<SegmentEntity> segments, File workDir, File outputWav, File outputMp3) throws IOException {
         requireFfmpeg();
 
         if (segments == null || segments.isEmpty()) {
@@ -181,7 +250,7 @@ public class AudioProcessingService {
         File concatListFile = new File(workDir, "concat_list.txt");
         try (PrintWriter writer = new PrintWriter(new OutputStreamWriter(new FileOutputStream(concatListFile), StandardCharsets.UTF_8))) {
             // 1. Initial silence if first segment starts after 0.0s (e.g. [5, 20])
-            com.adamtts.studio.model.SegmentEntity firstSeg = segments.get(0);
+            SegmentEntity firstSeg = segments.get(0);
             if (firstSeg.getStartTimeSeconds() > 0.005) {
                 File leadSilence = new File(workDir, "lead_silence.wav");
                 generateSilenceFile(firstSeg.getStartTimeSeconds(), leadSilence);
@@ -189,29 +258,17 @@ public class AudioProcessingService {
                 writer.println("file '" + escapedLead + "'");
             }
 
-            // 2. Add each segment and calculate silence gap to next segment
+            // 2. Add each pre-converted segment and calculate silence gap to next segment
             for (int i = 0; i < segments.size(); i++) {
-                com.adamtts.studio.model.SegmentEntity seg = segments.get(i);
-                File mp3 = new File(seg.getAudioFilePath());
+                SegmentEntity seg = segments.get(i);
                 File segmentWav = new File(workDir, "seg_" + i + ".wav");
-
-                List<String> convertCmd = List.of(
-                        ffmpegCmd,
-                        "-y",
-                        "-i", mp3.getAbsolutePath(),
-                        "-ar", "44100",
-                        "-ac", "1",
-                        "-c:a", "pcm_s16le",
-                        segmentWav.getAbsolutePath()
-                );
-                executeProcess(convertCmd, "Chuẩn hoá đoạn " + (i + 1));
 
                 String escapedPath = segmentWav.getAbsolutePath().replace("\\", "/").replace("'", "'\\''");
                 writer.println("file '" + escapedPath + "'");
 
                 // If not last segment, check gap to next segment
                 if (i < segments.size() - 1) {
-                    com.adamtts.studio.model.SegmentEntity nextSeg = segments.get(i + 1);
+                    SegmentEntity nextSeg = segments.get(i + 1);
                     double gap = nextSeg.getStartTimeSeconds() - seg.getEndTimeSeconds();
                     if (gap > 0.005) {
                         File gapSilence = new File(workDir, "gap_" + i + ".wav");
@@ -220,6 +277,16 @@ public class AudioProcessingService {
                         writer.println("file '" + escapedGap + "'");
                     }
                 }
+            }
+
+            // 3. Tail silence if last segment specifies targetEndTime (e.g. [00:24, 00:30] -> end exactly at 30s)
+            SegmentEntity lastSeg = segments.get(segments.size() - 1);
+            if (lastSeg.getTargetEndTime() != null && lastSeg.getTargetEndTime() > lastSeg.getEndTimeSeconds() + 0.005) {
+                double tailGap = lastSeg.getTargetEndTime() - lastSeg.getEndTimeSeconds();
+                File tailSilence = new File(workDir, "tail_silence.wav");
+                generateSilenceFile(tailGap, tailSilence);
+                String escapedTail = tailSilence.getAbsolutePath().replace("\\", "/").replace("'", "'\\''");
+                writer.println("file '" + escapedTail + "'");
             }
         }
 
@@ -249,6 +316,14 @@ public class AudioProcessingService {
             );
             executeProcess(mp3Cmd, "Xuất file MP3");
         }
+    }
+
+    /**
+     * Concatenates audio segments with exact timeline spacing (supporting custom timeline anchors like [0, 20] and [45, 60]).
+     */
+    public void mergeSegmentsWithExactTiming(List<SegmentEntity> segments, File workDir, File outputWav, File outputMp3) throws IOException {
+        prepareSegmentWavs(segments, workDir, 1.0);
+        mergePreparedSegmentsWithExactTiming(segments, workDir, outputWav, outputMp3);
     }
 
     private void generateSilenceFile(double durationSeconds, File outputFile) {

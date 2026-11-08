@@ -11,6 +11,7 @@ public class JobEntity {
     private String voiceId;
     private Double stability;
     private double gapSeconds;
+    private Double speed = 1.0;
     private String splitMode;
     private int totalSegments;
     private int completedSegments;
@@ -76,6 +77,14 @@ public class JobEntity {
 
     public void setGapSeconds(double gapSeconds) {
         this.gapSeconds = gapSeconds;
+    }
+
+    public Double getSpeed() {
+        return speed != null && speed > 0 ? speed : 1.0;
+    }
+
+    public void setSpeed(Double speed) {
+        this.speed = speed;
     }
 
     public String getSplitMode() {

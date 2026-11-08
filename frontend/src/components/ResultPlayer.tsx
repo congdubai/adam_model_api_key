@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   Play,
   Pause,
@@ -10,9 +10,24 @@ import {
   CheckCircle,
   ExternalLink,
   Volume2,
+  Archive,
+  Film,
+  Zap,
+  AlertTriangle,
+  RefreshCw,
+  FolderOpen,
+  Check,
 } from 'lucide-react';
-import { JobDetail, SegmentDto } from '../types';
-import { getDownloadUrl, getAudioStreamUrl } from '../services/api';
+import { JobDetail, SegmentDto, CapCutProject, CapCutApplyResponse } from '../types';
+import {
+  getDownloadUrl,
+  getSegmentDownloadUrl,
+  getAudioStreamUrl,
+  detectCapCut,
+  fetchCapCutProjects,
+  applyToCapCut,
+  openCapCutFolder,
+} from '../services/api';
 
 interface ResultPlayerProps {
   job: JobDetail;
@@ -29,13 +44,96 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [audioVersion, setAudioVersion] = useState(0);
+  const [audioFormat, setAudioFormat] = useState<'mp3' | 'wav'>('mp3');
   const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // CapCut Direct Integration State
+  const [capcutProjects, setCapcutProjects] = useState<CapCutProject[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<string>('');
+  const [capcutRunning, setCapcutRunning] = useState<boolean>(false);
+  const [capcutAvailable, setCapcutAvailable] = useState<boolean>(false);
+  const [capcutLoading, setCapcutLoading] = useState<boolean>(false);
+  const [syncClips, setSyncClips] = useState<boolean>(true);
+  const [addAudio, setAddAudio] = useState<boolean>(true);
+  const [addSubtitles, setAddSubtitles] = useState<boolean>(true);
+  const [clearCache, setClearCache] = useState<boolean>(true);
+  const [syncing, setSyncing] = useState<boolean>(false);
+  const [syncResult, setSyncResult] = useState<CapCutApplyResponse | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadCapcut();
+  }, []);
+
+  const loadCapcut = async () => {
+    setCapcutLoading(true);
+    try {
+      const detect = await detectCapCut();
+      setCapcutAvailable(detect.available);
+      setCapcutRunning(detect.isRunning);
+      if (detect.available) {
+        const projs = await fetchCapCutProjects();
+        setCapcutProjects(projs);
+        if (projs.length > 0 && !selectedFolder) {
+          setSelectedFolder(projs[0].folderPath);
+        }
+      }
+    } catch (e) {
+      console.warn('CapCut detect error:', e);
+    } finally {
+      setCapcutLoading(false);
+    }
+  };
+
+  const handleApplyCapCut = async () => {
+    if (!selectedFolder) return;
+    setSyncing(true);
+    setSyncResult(null);
+    setSyncError(null);
+    try {
+      const res = await applyToCapCut({
+        jobId: job.id,
+        projectFolder: selectedFolder,
+        syncVideoClips: syncClips,
+        addAudioTrack: addAudio,
+        addSubtitleTrack: addSubtitles,
+        clearCache: clearCache,
+      });
+      if (res.success) {
+        setSyncResult(res);
+      } else {
+        setSyncError(res.message);
+      }
+    } catch (err: any) {
+      setSyncError(err.message || 'Lỗi đồng bộ vào CapCut');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleOpenFolder = async (path: string) => {
+    try {
+      await openCapCutFolder(path);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const totalJobDuration = useMemo(() => {
+    if (job.segments && job.segments.length > 0) {
+      const last = job.segments[job.segments.length - 1];
+      return last.endTimeSeconds || 0;
+    }
+    return 0;
+  }, [job.segments]);
+
+  const effectiveDuration = duration > 0 ? duration : totalJobDuration;
+
   // Stable audio URL that does NOT change on every re-render!
   const audioUrl = useMemo(
-    () => getAudioStreamUrl(job.id, audioVersion),
-    [job.id, audioVersion]
+    () => getAudioStreamUrl(job.id, audioVersion, audioFormat),
+    [job.id, audioVersion, audioFormat]
   );
 
   const togglePlay = async () => {
@@ -47,7 +145,13 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
         audioRef.current.pause();
       }
     } catch (err) {
-      console.error('Audio play error:', err);
+      console.warn('Audio play error, reloading:', err);
+      try {
+        audioRef.current.load();
+        await audioRef.current.play();
+      } catch (retryErr) {
+        console.error('Audio retry error:', retryErr);
+      }
     }
   };
 
@@ -59,7 +163,10 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
 
   const handleLoadedMetadata = () => {
     if (audioRef.current) {
-      setDuration(audioRef.current.duration);
+      const d = audioRef.current.duration;
+      if (!isNaN(d) && isFinite(d) && d > 0) {
+        setDuration(d);
+      }
     }
   };
 
@@ -141,6 +248,9 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
           onPause={() => setIsPlaying(false)}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
+          onLoadedData={handleLoadedMetadata}
+          onCanPlay={handleLoadedMetadata}
+          onDurationChange={handleLoadedMetadata}
           onEnded={() => setIsPlaying(false)}
           onError={(e) => console.error('Audio load error:', e)}
         />
@@ -160,7 +270,7 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
             <input
               type="range"
               min="0"
-              max={duration || 0}
+              max={effectiveDuration || 0}
               step="0.05"
               value={currentTime}
               onChange={handleSeek}
@@ -168,17 +278,47 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
             />
             <div className="flex justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
               <span>{formatSeconds(currentTime)}</span>
-              <span>{formatSeconds(duration)}</span>
+              <span>{formatSeconds(effectiveDuration)}</span>
             </div>
           </div>
         </div>
 
-        {/* Native Browser Player Bar for 100% Reliability */}
-        <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
-          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-            Trình phát chuẩn trình duyệt:
-          </span>
+        {/* Format Selector & Native Browser Player Bar */}
+        <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+            <span>Định dạng phát:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setAudioFormat('mp3');
+                setAudioVersion((v) => v + 1);
+              }}
+              className={`px-2 py-0.5 rounded font-mono text-[11px] transition ${
+                audioFormat === 'mp3'
+                  ? 'bg-brand-600 text-white font-bold'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
+              }`}
+            >
+              MP3
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAudioFormat('wav');
+                setAudioVersion((v) => v + 1);
+              }}
+              className={`px-2 py-0.5 rounded font-mono text-[11px] transition ${
+                audioFormat === 'wav'
+                  ? 'bg-brand-600 text-white font-bold'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
+              }`}
+            >
+              WAV
+            </button>
+          </div>
+
           <audio
+            key={audioUrl}
             controls
             preload="metadata"
             src={audioUrl}
@@ -194,7 +334,7 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
           <span>Tải file về máy tính:</span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           <a
             href={getDownloadUrl(job.id, 'wav')}
             download
@@ -202,7 +342,17 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
           >
             <FileAudio className="w-5 h-5 text-brand-600 dark:text-brand-400 mb-1 group-hover:scale-110 transition" />
             <span className="text-xs font-bold text-slate-900 dark:text-white">Tải WAV</span>
-            <span className="text-[10px] text-slate-500">Cho CapCut (Chuẩn)</span>
+            <span className="text-[10px] text-slate-500">Khối liền CapCut</span>
+          </a>
+
+          <a
+            href={getDownloadUrl(job.id, 'zip')}
+            download
+            className="flex flex-col items-center justify-center p-3 rounded-xl border border-violet-200 dark:border-violet-900 bg-violet-50/50 dark:bg-violet-950/20 hover:bg-violet-100/60 dark:hover:bg-violet-900/40 transition text-center group"
+          >
+            <Archive className="w-5 h-5 text-violet-600 dark:text-violet-400 mb-1 group-hover:scale-110 transition" />
+            <span className="text-xs font-bold text-slate-900 dark:text-white">Tải ZIP Đoạn Rời</span>
+            <span className="text-[10px] text-slate-500">Từng file riêng biệt</span>
           </a>
 
           <a
@@ -319,15 +469,25 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
                       </div>
                     </td>
                     <td className="py-2.5 px-3 text-right">
-                      <button
-                        onClick={() => handleRegenerate(seg.index)}
-                        disabled={isRegen}
-                        title="Đọc lại riêng đoạn này (bỏ cache, dùng key pool)"
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-950/50 transition disabled:opacity-40"
-                      >
-                        <RotateCcw className={`w-3.5 h-3.5 ${isRegen ? 'animate-spin' : ''}`} />
-                        <span>Đọc lại</span>
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <a
+                          href={getSegmentDownloadUrl(job.id, seg.index)}
+                          download
+                          title={`Tải riêng âm thanh đoạn ${seg.index}`}
+                          className="p-1 rounded text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </a>
+                        <button
+                          onClick={() => handleRegenerate(seg.index)}
+                          disabled={isRegen}
+                          title="Đọc lại riêng đoạn này (bỏ cache, dùng key pool)"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-950/50 transition disabled:opacity-40"
+                        >
+                          <RotateCcw className={`w-3.5 h-3.5 ${isRegen ? 'animate-spin' : ''}`} />
+                          <span>Đọc lại</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -337,23 +497,167 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
         </div>
       </div>
 
-      {/* CapCut Quick Summary Box */}
-      <div className="p-4 rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/20 text-xs text-indigo-900 dark:text-indigo-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="space-y-1">
-          <div className="font-bold flex items-center gap-1.5">
-            <span>🎬 Cách dùng trong CapCut:</span>
+      {/* CapCut Direct Sync & Automation Box */}
+      <div className="p-5 rounded-2xl border-2 border-indigo-200 dark:border-indigo-800/80 bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-white dark:from-indigo-950/40 dark:via-purple-950/20 dark:to-slate-900 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-indigo-100 dark:border-indigo-900/50">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-500/20">
+              <Film className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                  Đồng bộ Trực tiếp vào Project CapCut PC
+                </h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                  {capcutAvailable ? 'Đã kết nối CapCut PC' : 'Tự Động 100%'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Tự động ghi âm thanh, phụ đề chữ chạy và co dãn clip video khớp từng câu nói vào project CapCut.
+              </p>
+            </div>
           </div>
-          <p className="text-[11px] text-slate-600 dark:text-slate-400">
-            1. Kéo file <strong>.wav</strong> vào đường âm thanh của CapCut. <br />
-            2. Vào tab <strong>Văn bản (Text)</strong> → <strong>Phụ đề cục bộ (Local Captions)</strong> → bấm <strong>Nhập</strong> file <strong>.srt</strong>.
-          </p>
+
+          <button
+            onClick={onOpenGuide}
+            className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 shrink-0"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Cách kéo thủ công</span>
+          </button>
         </div>
-        <button
-          onClick={onOpenGuide}
-          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs shrink-0 self-start sm:self-auto transition"
-        >
-          Xem hình ảnh hướng dẫn
-        </button>
+
+        {/* Project Selector Bar */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+          <div className="md:col-span-8 flex items-center gap-2">
+            <div className="flex-1 space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                <span>Chọn Project CapCut trên máy:</span>
+                {capcutRunning && (
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 font-normal">
+                    <AlertTriangle className="w-3 h-3" />
+                    CapCut đang chạy (khuyên nên đóng CapCut trước khi ghi)
+                  </span>
+                )}
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedFolder}
+                  onChange={(e) => setSelectedFolder(e.target.value)}
+                  disabled={syncing || capcutLoading || capcutProjects.length === 0}
+                  className="flex-1 text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  {capcutProjects.length === 0 ? (
+                    <option value="">
+                      {capcutLoading ? 'Đang quét project CapCut...' : 'Không tìm thấy project CapCut nào'}
+                    </option>
+                  ) : (
+                    capcutProjects.map((p) => (
+                      <option key={p.folderPath} value={p.folderPath}>
+                        {p.name} ({p.clipCount} clip{p.durationSeconds > 0 ? ` • ${(p.durationSeconds).toFixed(1)}s` : ''})
+                      </option>
+                    ))
+                  )}
+                </select>
+                <button
+                  type="button"
+                  onClick={loadCapcut}
+                  disabled={capcutLoading || syncing}
+                  title="Quét lại danh sách project CapCut"
+                  className="p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition"
+                >
+                  <RefreshCw className={`w-4 h-4 ${capcutLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="md:col-span-4 flex items-end">
+            <button
+              type="button"
+              onClick={handleApplyCapCut}
+              disabled={syncing || !selectedFolder}
+              className="w-full py-2.5 px-4 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-md shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 transition"
+            >
+              {syncing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Đang ghi vào CapCut...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4 text-amber-300" />
+                  <span>⚡ Áp dụng vào CapCut</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Options Row */}
+        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-700 dark:text-slate-300 pt-1">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={addSubtitles}
+              onChange={(e) => setAddSubtitles(e.target.checked)}
+              className="rounded accent-indigo-600"
+            />
+            <span>Ghi track phụ đề chữ chạy (Subtitle)</span>
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={addAudio}
+              onChange={(e) => setAddAudio(e.target.checked)}
+              className="rounded accent-indigo-600"
+            />
+            <span>Ghi dải âm thanh lồng tiếng (Voice WAV)</span>
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={syncClips}
+              onChange={(e) => setSyncClips(e.target.checked)}
+              className="rounded accent-indigo-600"
+            />
+            <span>Tua tốc độ video/ảnh theo câu nói (0.4x - 2.0x)</span>
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={clearCache}
+              onChange={(e) => setClearCache(e.target.checked)}
+              className="rounded accent-indigo-600"
+            />
+            <span>Xóa cache CapCut trước khi ghi</span>
+          </label>
+        </div>
+
+        {/* Success / Error Feedback */}
+        {syncResult && (
+          <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{syncResult.message}</span>
+            </div>
+            <button
+              onClick={() => handleOpenFolder(syncResult.projectFolder)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[11px] transition shrink-0"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>Mở thư mục CapCut</span>
+            </button>
+          </div>
+        )}
+
+        {syncError && (
+          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+            <span>{syncError}</span>
+          </div>
+        )}
       </div>
     </div>
   );
