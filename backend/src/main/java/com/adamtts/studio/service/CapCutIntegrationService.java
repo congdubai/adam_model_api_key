@@ -198,8 +198,24 @@ public class CapCutIntegrationService {
 
         boolean capcutRunning = isCapCutRunning();
         resp.setCapcutWasRunning(capcutRunning);
+        if (capcutRunning) {
+            try {
+                if (System.getProperty("os.name", "").toLowerCase().contains("win")) {
+                    new ProcessBuilder("taskkill", "/F", "/IM", "CapCut.exe").start().waitFor();
+                    Thread.sleep(800);
+                }
+            } catch (Exception e) {
+                log.warn("Could not terminate CapCut: {}", e.getMessage());
+            }
+        }
 
         try {
+            // Remove .locked file if present
+            File lockedFile = new File(projectFolder, ".locked");
+            if (lockedFile.exists()) {
+                lockedFile.delete();
+            }
+
             // Backup draft_content.json -> draft_content.json.bak
             File backupFile = new File(projectFolder, "draft_content.json.bak");
             Files.copy(draftPath.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
@@ -303,65 +319,165 @@ public class CapCutIntegrationService {
             }
             resp.setSyncedClips(syncedClips);
 
-            // 2. Add Audio Track if requested
+            // 2. Add Audio Track with SEPARATE individual clips for each timeline scene!
             boolean audioAdded = false;
-            String audioFilePath = job.getWavFilePath();
-            if (audioFilePath == null || !new File(audioFilePath).exists()) {
-                audioFilePath = job.getMp3FilePath();
-            }
-
-            if (req.isAddAudioTrack() && audioFilePath != null && new File(audioFilePath).exists()) {
-                File audioFile = new File(audioFilePath);
-                long audioDurationUs = Math.round(jobSegments.get(jobSegments.size() - 1).getEndTimeSeconds() * 1_000_000);
-                if (audioDurationUs <= 0) {
-                    audioDurationUs = Math.round(job.getSegments().stream().mapToDouble(SegmentEntity::getDurationSeconds).sum() * 1_000_000);
+            if (req.isAddAudioTrack()) {
+                // Remove any previous audio track created by Adam TTS
+                for (int i = tracks.size() - 1; i >= 0; i--) {
+                    if ("audio".equalsIgnoreCase(tracks.get(i).path("type").asText()) &&
+                            tracks.get(i).path("name").asText("").contains("Adam TTS")) {
+                        tracks.remove(i);
+                    }
                 }
 
-                String audioMatId = genId();
-                String audioSegId = genId();
-                String audioTrackId = genId();
+                File resourcesDir = new File(projectFolder, "Resources");
+                if (!resourcesDir.exists()) {
+                    resourcesDir.mkdirs();
+                }
 
                 ArrayNode audiosMat = materials.withArray("audios");
-                ObjectNode audioMat = objectMapper.createObjectNode();
-                audioMat.put("id", audioMatId);
-                audioMat.put("type", "extract_music");
-                audioMat.put("name", audioFile.getName());
-                audioMat.put("duration", audioDurationUs);
-                audioMat.put("path", audioFile.getAbsolutePath().replace("\\", "/"));
-                audioMat.put("category_name", "local");
-                audioMat.putArray("wave_points");
-                audioMat.put("check_flag", 1);
-                audiosMat.add(audioMat);
-
-                ObjectNode audioSeg = objectMapper.createObjectNode();
-                audioSeg.put("id", audioSegId);
-                audioSeg.put("material_id", audioMatId);
-                audioSeg.put("render_index", 0);
-                audioSeg.put("speed", 1.0);
-                audioSeg.put("volume", 1.0);
-                audioSeg.put("last_nonzero_volume", 1.0);
-                audioSeg.put("visible", true);
-
-                ObjectNode aSource = audioSeg.putObject("source_timerange");
-                aSource.put("start", 0);
-                aSource.put("duration", audioDurationUs);
-
-                ObjectNode aTarget = audioSeg.putObject("target_timerange");
-                aTarget.put("start", 0);
-                aTarget.put("duration", audioDurationUs);
+                ArrayNode speedsMat = materials.withArray("speeds");
+                ArrayNode placeholderMat = materials.withArray("placeholder_infos");
+                ArrayNode beatsMat = materials.withArray("beats");
+                ArrayNode channelMat = materials.withArray("sound_channel_mappings");
+                ArrayNode vocalMat = materials.withArray("vocal_separations");
 
                 ObjectNode newAudioTrack = objectMapper.createObjectNode();
-                newAudioTrack.put("id", audioTrackId);
+                newAudioTrack.put("id", genId());
                 newAudioTrack.put("type", "audio");
                 newAudioTrack.put("name", "Adam TTS Voice");
                 newAudioTrack.put("attribute", 0);
                 newAudioTrack.put("flag", 0);
                 newAudioTrack.put("is_default_name", false);
-                ArrayNode aSegs = newAudioTrack.putArray("segments");
-                aSegs.add(audioSeg);
+                ArrayNode audioSegs = newAudioTrack.putArray("segments");
 
-                tracks.add(newAudioTrack);
-                audioAdded = true;
+                for (int i = 0; i < jobSegments.size(); i++) {
+                    SegmentEntity seg = jobSegments.get(i);
+                    File segSrc = jobManagerService.getSegmentFile(job.getId(), seg.getIndex());
+                    if (segSrc == null || !segSrc.exists()) {
+                        continue;
+                    }
+
+                    String ext = segSrc.getName().endsWith(".wav") ? ".wav" : ".mp3";
+                    File destSeg = new File(resourcesDir, String.format("Doan_%02d_tu_%.1fs%s", i + 1, seg.getStartTimeSeconds(), ext));
+                    Files.copy(segSrc.toPath(), destSeg.toPath(), StandardCopyOption.REPLACE_EXISTING);
+
+                    long startUs = Math.round(seg.getStartTimeSeconds() * 1_000_000);
+                    long durUs = Math.round(seg.getDurationSeconds() * 1_000_000);
+                    if (durUs <= 0) durUs = 1_000_000;
+
+                    String audioMatId = genId();
+                    String sid = genId();
+                    String pid = genId();
+                    String bid = genId();
+                    String smid = genId();
+                    String vid = genId();
+
+                    // Audio Material
+                    ObjectNode audioMat = objectMapper.createObjectNode();
+                    audioMat.put("id", audioMatId);
+                    audioMat.put("type", "extract_music");
+                    audioMat.put("name", destSeg.getName());
+                    audioMat.put("duration", durUs);
+                    audioMat.put("path", destSeg.getAbsolutePath().replace("\\", "/"));
+                    audioMat.put("category_name", "local");
+                    audioMat.putArray("wave_points");
+                    audioMat.put("check_flag", 1);
+                    audiosMat.add(audioMat);
+
+                    // Speed Material
+                    ObjectNode sObj = objectMapper.createObjectNode();
+                    sObj.putNull("curve_speed");
+                    sObj.put("id", sid);
+                    sObj.put("mode", 0);
+                    sObj.put("speed", 1.0);
+                    sObj.put("type", "speed");
+                    speedsMat.add(sObj);
+
+                    // Placeholder Info
+                    ObjectNode pObj = objectMapper.createObjectNode();
+                    pObj.put("id", pid);
+                    pObj.put("type", "placeholder_info");
+                    pObj.put("meta_type", "none");
+                    pObj.put("res_path", "");
+                    pObj.put("res_text", "");
+                    pObj.put("error_path", "");
+                    pObj.put("error_text", "");
+                    placeholderMat.add(pObj);
+
+                    // Beats Material
+                    ObjectNode bObj = objectMapper.createObjectNode();
+                    bObj.put("id", bid);
+                    bObj.put("type", "beats");
+                    bObj.put("enable_ai_beats", false);
+                    bObj.put("gear", 404);
+                    bObj.put("gear_count", 0);
+                    bObj.put("mode", 404);
+                    bObj.putArray("user_beats");
+                    bObj.putNull("user_delete_ai_beats");
+                    ObjectNode aiBeats = bObj.putObject("ai_beats");
+                    aiBeats.put("melody_url", "");
+                    aiBeats.put("melody_path", "");
+                    aiBeats.put("beats_url", "");
+                    aiBeats.put("beats_path", "");
+                    aiBeats.putArray("melody_percents").add(0.0);
+                    aiBeats.putArray("beat_speed_infos");
+                    beatsMat.add(bObj);
+
+                    // Sound Channel Mapping
+                    ObjectNode smObj = objectMapper.createObjectNode();
+                    smObj.put("id", smid);
+                    smObj.put("type", "");
+                    smObj.put("audio_channel_mapping", 0);
+                    smObj.put("is_config_open", false);
+                    channelMat.add(smObj);
+
+                    // Vocal Separation
+                    ObjectNode vObj = objectMapper.createObjectNode();
+                    vObj.put("id", vid);
+                    vObj.put("type", "vocal_separation");
+                    vObj.put("choice", 0);
+                    vObj.putArray("removed_sounds");
+                    vObj.putNull("time_range");
+                    vObj.put("production_path", "");
+                    vObj.put("final_algorithm", "");
+                    vObj.put("enter_from", "");
+                    vocalMat.add(vObj);
+
+                    // Audio Segment
+                    ObjectNode audioSeg = objectMapper.createObjectNode();
+                    audioSeg.put("id", genId());
+                    audioSeg.put("material_id", audioMatId);
+                    audioSeg.put("render_index", 0);
+                    audioSeg.put("speed", 1.0);
+                    audioSeg.put("volume", 1.0);
+                    audioSeg.put("last_nonzero_volume", 1.0);
+                    audioSeg.put("visible", true);
+                    audioSeg.put("track_attribute", 0);
+                    audioSeg.put("track_render_index", 1);
+
+                    ArrayNode refs = audioSeg.putArray("extra_material_refs");
+                    refs.add(sid);
+                    refs.add(pid);
+                    refs.add(bid);
+                    refs.add(smid);
+                    refs.add(vid);
+
+                    ObjectNode aSource = audioSeg.putObject("source_timerange");
+                    aSource.put("start", 0);
+                    aSource.put("duration", durUs);
+
+                    ObjectNode aTarget = audioSeg.putObject("target_timerange");
+                    aTarget.put("start", startUs);
+                    aTarget.put("duration", durUs);
+
+                    audioSegs.add(audioSeg);
+                }
+
+                if (audioSegs.size() > 0) {
+                    tracks.add(newAudioTrack);
+                    audioAdded = true;
+                }
             }
             resp.setAudioAdded(audioAdded);
 
@@ -476,8 +592,14 @@ public class CapCutIntegrationService {
                 draftNode.put("duration", totalUs);
             }
 
-            // 5. Write back draft_content.json
+            // 5. Write back draft_content.json and template-2.tmp
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(draftPath, draftNode);
+            File tmpFile = new File(projectFolder, "template-2.tmp");
+            try {
+                objectMapper.writerWithDefaultPrettyPrinter().writeValue(tmpFile, draftNode);
+            } catch (Exception e) {
+                log.warn("Could not write template-2.tmp: {}", e.getMessage());
+            }
 
             // 6. Update metadata root_meta_info.json / draft_info.json
             updateCapCutMetadata(projectFolder, totalUs);

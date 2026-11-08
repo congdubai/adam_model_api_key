@@ -59,7 +59,7 @@ public class CapCutController {
 
         try {
             if (System.getProperty("os.name", "").toLowerCase().contains("win")) {
-                new ProcessBuilder("explorer.exe", folder.getAbsolutePath()).start();
+                new ProcessBuilder("cmd.exe", "/c", "start", "", folder.getAbsolutePath()).start();
             } else if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
                 Desktop.getDesktop().open(folder);
             }
