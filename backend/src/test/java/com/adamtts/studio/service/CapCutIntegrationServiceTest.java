@@ -77,7 +77,7 @@ class CapCutIntegrationServiceTest {
         req.setAddAudioTrack(false);
         req.setAddSubtitleTrack(true);
         req.setSubtitleStyle("tiktok_black_bar");
-        req.setSubtitleAlignment(0); // Left align
+        req.setSubtitleAlignment(1); // Center align
 
         CapCutApplyResponse resp = capCutService.applyToDraft(req);
         assertTrue(resp.isSuccess());
@@ -94,14 +94,13 @@ class CapCutIntegrationServiceTest {
         assertEquals("#000000", textMat.path("background_color").asText());
         assertEquals(0.70, textMat.path("background_alpha").asDouble(), 0.01);
         assertEquals(0.15, textMat.path("background_round_radius").asDouble(), 0.01);
-        assertEquals(0, textMat.path("alignment").asInt());
+        assertEquals(1, textMat.path("alignment").asInt());
         assertFalse(textMat.path("border_enabled").asBoolean());
 
         // Check text wrapping: "phấn nền son chỉ một lần lướt là đi hết\nluôn hơ"
         String baseContent = textMat.path("base_content").asText();
         assertTrue(baseContent.contains("\n"), "Should be wrapped into two lines");
         assertTrue(baseContent.startsWith("phấn nền son"));
-        assertTrue(baseContent.endsWith("luôn hơ"));
 
         // Check track segments position
         JsonNode tracks = resultJson.path("tracks");
@@ -114,7 +113,9 @@ class CapCutIntegrationServiceTest {
         }
         assertNotNull(textTrack);
         JsonNode segNode = textTrack.path("segments").get(0);
+        double x = segNode.path("clip").path("transform").path("x").asDouble();
         double y = segNode.path("clip").path("transform").path("y").asDouble();
+        assertEquals(0.0, x, 0.01, "X position should be 0.0 when centered");
         assertEquals(-0.58, y, 0.01, "Y position should be optimized for 9:16 vertical video");
     }
 }

@@ -504,15 +504,16 @@ public class CapCutIntegrationService {
                 // Optimal positioning (avoids TikTok bio, description & right action buttons)
                 double defaultY = isVertical ? -0.58 : -0.75;
                 double yPos = req.getSubtitleY() != null ? req.getSubtitleY() : defaultY;
-                double xPos = isVertical ? (req.getSubtitleAlignment() == 0 ? -0.05 : 0.0) : 0.0;
-                int maxLineChars = isVertical ? 38 : 55;
+                int alignment = req.getSubtitleAlignment(); // 1 = Center (default), 0 = Left
+                // If centered, x is 0.0. If left-aligned, anchor at -0.38 to keep inside video frame
+                double xPos = (alignment == 0) ? -0.38 : 0.0;
+                int maxLineChars = isVertical ? 28 : 50;
 
                 boolean isTikTokStyle = req.getSubtitleStyle() == null
                         || req.getSubtitleStyle().isBlank()
                         || "tiktok_black_bar".equalsIgnoreCase(req.getSubtitleStyle());
 
                 int textSize = req.getSubtitleSize() > 0 ? req.getSubtitleSize() : 28;
-                int alignment = req.getSubtitleAlignment(); // 0 = Left, 1 = Center
 
                 ArrayNode textsMat = materials.withArray("texts");
                 ArrayNode textSegs = objectMapper.createArrayNode();

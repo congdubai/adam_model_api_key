@@ -11,7 +11,7 @@ public class CapCutApplyRequest {
     private boolean addSubtitleTrack = true;
     private boolean clearCache = true;
     private String subtitleStyle = "tiktok_black_bar"; // "tiktok_black_bar" or "classic_shadow"
-    private int subtitleAlignment = 0; // 0 = Left, 1 = Center
+    private int subtitleAlignment = 1; // 1 = Center (default), 0 = Left
     private int subtitleSize = 28;
     private Double subtitleY = null;
 
