@@ -56,7 +56,9 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
   const [capcutLoading, setCapcutLoading] = useState<boolean>(false);
   const [syncClips, setSyncClips] = useState<boolean>(true);
   const [addAudio, setAddAudio] = useState<boolean>(true);
-  const [addSubtitles, setAddSubtitles] = useState<boolean>(false);
+  const [addSubtitles, setAddSubtitles] = useState<boolean>(true);
+  const [subtitleStyle, setSubtitleStyle] = useState<'tiktok_black_bar' | 'classic_shadow'>('tiktok_black_bar');
+  const [subtitleAlignment, setSubtitleAlignment] = useState<number>(0);
   const [clearCache, setClearCache] = useState<boolean>(true);
   const [syncing, setSyncing] = useState<boolean>(false);
   const [syncResult, setSyncResult] = useState<CapCutApplyResponse | null>(null);
@@ -99,6 +101,8 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
         addAudioTrack: addAudio,
         addSubtitleTrack: addSubtitles,
         clearCache: clearCache,
+        subtitleStyle: subtitleStyle,
+        subtitleAlignment: subtitleAlignment,
       });
       if (res.success) {
         setSyncResult(res);
@@ -604,7 +608,7 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
               onChange={(e) => setAddSubtitles(e.target.checked)}
               className="rounded accent-indigo-600"
             />
-            <span>Ghi track phụ đề chữ chạy (Subtitle)</span>
+            <span className="font-medium">Ghi track phụ đề chữ chạy (Subtitle)</span>
           </label>
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input
@@ -634,6 +638,106 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
             <span>Xóa cache CapCut trước khi ghi</span>
           </label>
         </div>
+
+        {/* Subtitle Customization & Preview Panel */}
+        {addSubtitles && (
+          <div className="p-3.5 rounded-xl bg-slate-900/5 dark:bg-slate-800/60 border border-indigo-200/80 dark:border-indigo-900/60 space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  Kiểu phụ đề:
+                </span>
+                <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-900 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setSubtitleStyle('tiktok_black_bar')}
+                    className={`px-2.5 py-1 rounded-md transition ${
+                      subtitleStyle === 'tiktok_black_bar'
+                        ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    Chữ trắng nền đen mờ bo góc (như video mẫu)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubtitleStyle('classic_shadow')}
+                    className={`px-2.5 py-1 rounded-md transition ${
+                      subtitleStyle === 'classic_shadow'
+                        ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    Viền bóng mờ cổ điển
+                  </button>
+                </div>
+              </div>
+
+              {/* Alignment */}
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <span className="text-slate-500 dark:text-slate-400">Căn lề:</span>
+                <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-900">
+                  <button
+                    type="button"
+                    onClick={() => setSubtitleAlignment(0)}
+                    className={`px-2 py-0.5 rounded transition ${
+                      subtitleAlignment === 0
+                        ? 'bg-indigo-600 text-white font-bold'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                    title="Căn trái như mẫu video"
+                  >
+                    Căn trái (như mẫu)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubtitleAlignment(1)}
+                    className={`px-2 py-0.5 rounded transition ${
+                      subtitleAlignment === 1
+                        ? 'bg-indigo-600 text-white font-bold'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                    title="Căn giữa dòng"
+                  >
+                    Căn giữa
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Visual Preview Box */}
+            <div className="relative overflow-hidden rounded-lg bg-slate-900/90 dark:bg-black/90 p-3 border border-slate-800 text-left">
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-1.5 flex items-center justify-between">
+                <span>Xem trước mẫu phụ đề:</span>
+                <span className="text-[10px] lowercase text-emerald-400 font-normal">
+                  tự động canh vị trí chuẩn không bị che bởi mô tả & nút tương tác
+                </span>
+              </div>
+              <div className={subtitleAlignment === 0 ? 'text-left' : 'text-center'}>
+                {subtitleStyle === 'tiktok_black_bar' ? (
+                  <div className="inline-block px-3 py-1.5 rounded-md bg-black/75 text-white font-sans text-xs tracking-wide leading-relaxed shadow-sm">
+                    {subtitleAlignment === 0 ? (
+                      <>
+                        phấn nền son chỉ một lần lướt là đi hết<br />luôn hơ
+                      </>
+                    ) : (
+                      'phấn nền son chỉ một lần lướt là đi hết luôn hơ'
+                    )}
+                  </div>
+                ) : (
+                  <div
+                    className="inline-block text-white font-sans text-xs tracking-wide font-medium"
+                    style={{
+                      textShadow: '0 2px 4px rgba(0,0,0,0.9), 0 0 2px #000',
+                    }}
+                  >
+                    phấn nền son chỉ một lần lướt là đi hết luôn hơ
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Success / Error Feedback */}
         {syncResult && (

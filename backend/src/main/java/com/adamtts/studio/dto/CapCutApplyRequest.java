@@ -1,5 +1,8 @@
 package com.adamtts.studio.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CapCutApplyRequest {
     private String jobId;
     private String projectFolder;
@@ -7,6 +10,10 @@ public class CapCutApplyRequest {
     private boolean addAudioTrack = true;
     private boolean addSubtitleTrack = true;
     private boolean clearCache = true;
+    private String subtitleStyle = "tiktok_black_bar"; // "tiktok_black_bar" or "classic_shadow"
+    private int subtitleAlignment = 0; // 0 = Left, 1 = Center
+    private int subtitleSize = 28;
+    private Double subtitleY = null;
 
     public CapCutApplyRequest() {
     }
@@ -58,5 +65,38 @@ public class CapCutApplyRequest {
     public void setClearCache(boolean clearCache) {
         this.clearCache = clearCache;
     }
+
+    public String getSubtitleStyle() {
+        return subtitleStyle;
+    }
+
+    public void setSubtitleStyle(String subtitleStyle) {
+        this.subtitleStyle = subtitleStyle;
+    }
+
+    public int getSubtitleAlignment() {
+        return subtitleAlignment;
+    }
+
+    public void setSubtitleAlignment(int subtitleAlignment) {
+        this.subtitleAlignment = subtitleAlignment;
+    }
+
+    public int getSubtitleSize() {
+        return subtitleSize;
+    }
+
+    public void setSubtitleSize(int subtitleSize) {
+        this.subtitleSize = subtitleSize;
+    }
+
+    public Double getSubtitleY() {
+        return subtitleY;
+    }
+
+    public void setSubtitleY(Double subtitleY) {
+        this.subtitleY = subtitleY;
+    }
 }
+
 

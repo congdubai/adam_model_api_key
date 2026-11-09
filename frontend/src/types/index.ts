@@ -107,6 +107,9 @@ export interface CapCutApplyRequest {
   addAudioTrack: boolean;
   addSubtitleTrack: boolean;
   clearCache: boolean;
+  subtitleStyle?: 'tiktok_black_bar' | 'classic_shadow';
+  subtitleAlignment?: number;
+  subtitleSize?: number;
 }
 
 export interface CapCutApplyResponse {
