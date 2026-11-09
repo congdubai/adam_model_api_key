@@ -501,19 +501,20 @@ public class CapCutIntegrationService {
                 }
                 boolean isVertical = canvasHeight > canvasWidth;
 
-                // Optimal positioning (avoids TikTok bio, description & right action buttons)
-                double defaultY = isVertical ? -0.58 : -0.75;
+                // Optimal positioning for TikTok / Shorts: Lower-third / bottom safe zone
+                // Alignment: 0 = Left (default for TikTok lower-left), 1 = Center
+                int alignment = req.getSubtitleAlignment();
+                double defaultY = isVertical ? -0.62 : -0.75;
                 double yPos = req.getSubtitleY() != null ? req.getSubtitleY() : defaultY;
-                int alignment = req.getSubtitleAlignment(); // 1 = Center (default), 0 = Left
-                // If centered, x is 0.0. If left-aligned, anchor at -0.38 to keep inside video frame
+                // If left-aligned, anchor at -0.38 to keep natural ~8% left margin inside 9:16 canvas
                 double xPos = (alignment == 0) ? -0.38 : 0.0;
-                int maxLineChars = isVertical ? 28 : 50;
+                int maxLineChars = isVertical ? 24 : 45;
 
                 boolean isTikTokStyle = req.getSubtitleStyle() == null
                         || req.getSubtitleStyle().isBlank()
                         || "tiktok_black_bar".equalsIgnoreCase(req.getSubtitleStyle());
 
-                int textSize = req.getSubtitleSize() > 0 ? req.getSubtitleSize() : 28;
+                int textSize = req.getSubtitleSize() > 0 ? req.getSubtitleSize() : 24;
 
                 ArrayNode textsMat = materials.withArray("texts");
                 ArrayNode textSegs = objectMapper.createArrayNode();
@@ -527,111 +528,130 @@ public class CapCutIntegrationService {
                         continue;
                     }
 
-                    String formattedText = smartWrapSubtitle(spoken, maxLineChars);
-
                     long startUs = Math.round(seg.getStartTimeSeconds() * 1_000_000);
                     long durUs = Math.round(seg.getDurationSeconds() * 1_000_000);
                     if (durUs <= 0) durUs = 1_000_000;
 
-                    String textMatId = genId();
-                    String textSegId = genId();
+                    // Break multi-sentence segments into short subtitle clips (1-2 lines each)
+                    // matching TikTok subtitle pacing
+                    List<SubtitleChunk> chunks = splitIntoSubtitleChunks(spoken, startUs, durUs);
 
-                    // Subtitle Material
-                    ObjectNode contentObj = objectMapper.createObjectNode();
-                    contentObj.put("text", formattedText);
-                    ArrayNode styles = contentObj.putArray("styles");
-                    ObjectNode styleObj = objectMapper.createObjectNode();
-                    styleObj.put("size", 8.0);
-                    ArrayNode rng = styleObj.putArray("range");
-                    rng.add(0);
-                    rng.add(formattedText.length());
-                    ObjectNode font = styleObj.putObject("font");
-                    font.put("id", "");
-                    font.put("title", "Default");
-                    ObjectNode fill = styleObj.putObject("fill");
-                    fill.put("alpha", 1);
-                    ObjectNode fillContent = fill.putObject("content");
-                    fillContent.put("start_color", "#FFFFFF");
-                    fillContent.put("end_color", "#FFFFFF");
-                    styles.add(styleObj);
+                    for (SubtitleChunk chunk : chunks) {
+                        String formattedText = smartWrapSubtitle(chunk.text, maxLineChars);
+                        String textMatId = genId();
+                        String textSegId = genId();
 
-                    ObjectNode tMat = objectMapper.createObjectNode();
-                    tMat.put("id", textMatId);
-                    tMat.put("type", "text");
-                    tMat.put("add_type", 0);
-                    tMat.put("text_color", "#FFFFFF");
-                    tMat.put("text_size", textSize);
-                    tMat.put("alignment", alignment);
+                        // Subtitle Material Content JSON (DirectWrite / RichText parser)
+                        ObjectNode contentObj = objectMapper.createObjectNode();
+                        contentObj.put("text", formattedText);
+                        ArrayNode styles = contentObj.putArray("styles");
+                        ObjectNode styleObj = objectMapper.createObjectNode();
+                        styleObj.put("size", 7.5);
+                        ArrayNode rng = styleObj.putArray("range");
+                        rng.add(0);
+                        rng.add(formattedText.length());
 
-                    if (isTikTokStyle) {
-                        // Exact style from video: White text with rounded translucent dark background box
-                        tMat.put("background_style", 1);
-                        tMat.put("background_color", "#000000");
-                        tMat.put("background_alpha", 0.70); // 70% opacity translucent dark box
-                        tMat.put("background_round_radius", 0.15); // gentle rounded corners
-                        tMat.put("background_width", 0.14);
-                        tMat.put("background_height", 0.14);
-                        tMat.put("background_horizontal_offset", 0.0);
-                        tMat.put("background_vertical_offset", 0.0);
+                        ObjectNode font = styleObj.putObject("font");
+                        font.put("id", "");
+                        font.put("title", "Default");
 
-                        // Clean text, no outline or harsh shadow
-                        tMat.put("border_enabled", false);
-                        tMat.put("border_color", "");
-                        tMat.put("border_width", 0.0);
-                        tMat.put("border_alpha", 1.0);
-                        tMat.put("has_shadow", false);
-                        tMat.put("shadow_color", "#000000");
-                        tMat.put("shadow_alpha", 0.0);
-                        tMat.put("shadow_blur", 0.0);
-                        tMat.put("shadow_distance", 0.0);
-                    } else {
-                        // Classic style: border and shadow
-                        tMat.put("background_style", 0);
-                        tMat.put("background_color", "#000000");
-                        tMat.put("background_alpha", 0.0);
-                        tMat.put("border_enabled", true);
-                        tMat.put("border_color", "#000000");
-                        tMat.put("border_width", 0.08);
-                        tMat.put("border_alpha", 1.0);
-                        tMat.put("has_shadow", true);
-                        tMat.put("shadow_color", "#000000");
-                        tMat.put("shadow_alpha", 0.9);
-                        tMat.put("shadow_blur", 0.45);
-                        tMat.put("shadow_distance", 8.0);
+                        ObjectNode fill = styleObj.putObject("fill");
+                        fill.put("alpha", 1);
+                        ObjectNode fillContent = fill.putObject("content");
+                        fillContent.put("start_color", "#FFFFFF");
+                        fillContent.put("end_color", "#FFFFFF");
+
+                        if (isTikTokStyle) {
+                            ObjectNode bgObj = styleObj.putObject("background");
+                            ObjectNode bgFill = bgObj.putObject("fill");
+                            bgFill.put("alpha", 0.75);
+                            ObjectNode bgContent = bgFill.putObject("content");
+                            bgContent.put("start_color", "#000000");
+                            bgContent.put("end_color", "#000000");
+                        }
+                        styles.add(styleObj);
+
+                        ObjectNode tMat = objectMapper.createObjectNode();
+                        tMat.put("id", textMatId);
+                        tMat.put("type", "text");
+                        tMat.put("add_type", 0);
+                        tMat.put("text_color", "#FFFFFF");
+                        tMat.put("text_size", textSize);
+                        tMat.put("alignment", alignment);
+                        tMat.put("use_effect_default_color", false);
+                        tMat.put("bold_width", 0.008);
+
+                        if (isTikTokStyle) {
+                            // Exact style from video: White text with rounded translucent dark background box
+                            tMat.put("background_style", 1);
+                            tMat.put("background_color", "#000000");
+                            tMat.put("background_alpha", 0.75); // 75% opacity translucent dark box
+                            tMat.put("background_round_radius", 0.20); // gentle rounded corners
+                            tMat.put("background_width", 0.14);
+                            tMat.put("background_height", 0.14);
+                            tMat.put("background_horizontal_offset", 0.0);
+                            tMat.put("background_vertical_offset", 0.0);
+                            tMat.put("background_fill", "");
+
+                            // Clean text, no outline or harsh shadow
+                            tMat.put("border_enabled", false);
+                            tMat.put("border_color", "");
+                            tMat.put("border_width", 0.0);
+                            tMat.put("border_alpha", 1.0);
+                            tMat.put("has_shadow", false);
+                            tMat.put("shadow_color", "#000000");
+                            tMat.put("shadow_alpha", 0.0);
+                            tMat.put("shadow_blur", 0.0);
+                            tMat.put("shadow_distance", 0.0);
+                        } else {
+                            // Classic style: border and shadow
+                            tMat.put("background_style", 0);
+                            tMat.put("background_color", "#000000");
+                            tMat.put("background_alpha", 0.0);
+                            tMat.put("border_enabled", true);
+                            tMat.put("border_color", "#000000");
+                            tMat.put("border_width", 0.08);
+                            tMat.put("border_alpha", 1.0);
+                            tMat.put("has_shadow", true);
+                            tMat.put("shadow_color", "#000000");
+                            tMat.put("shadow_alpha", 0.9);
+                            tMat.put("shadow_blur", 0.45);
+                            tMat.put("shadow_distance", 8.0);
+                        }
+
+                        tMat.put("line_feed", 1);
+                        tMat.put("line_spacing", 0.02);
+                        tMat.put("typesetting", 0);
+                        tMat.put("base_content", formattedText);
+                        tMat.put("content", objectMapper.writeValueAsString(contentObj));
+                        textsMat.add(tMat);
+
+                        // Subtitle Segment
+                        ObjectNode tSeg = objectMapper.createObjectNode();
+                        tSeg.put("id", textSegId);
+                        tSeg.put("material_id", textMatId);
+                        tSeg.put("render_index", 11000);
+                        tSeg.put("speed", 1.0);
+                        tSeg.put("visible", true);
+                        tSeg.put("volume", 1.0);
+
+                        ObjectNode clip = tSeg.putObject("clip");
+                        clip.put("alpha", 1.0);
+                        ObjectNode transform = clip.putObject("transform");
+                        transform.put("x", xPos);
+                        transform.put("y", yPos);
+
+                        ObjectNode tSrc = tSeg.putObject("source_timerange");
+                        tSrc.put("start", 0);
+                        tSrc.put("duration", chunk.durUs);
+
+                        ObjectNode tTarget = tSeg.putObject("target_timerange");
+                        tTarget.put("start", chunk.startUs);
+                        tTarget.put("duration", chunk.durUs);
+
+                        textSegs.add(tSeg);
+                        addedSubtitles++;
                     }
-
-                    tMat.put("line_feed", 1);
-                    tMat.put("line_spacing", 0.02);
-                    tMat.put("typesetting", 0);
-                    tMat.put("base_content", formattedText);
-                    tMat.put("content", objectMapper.writeValueAsString(contentObj));
-                    textsMat.add(tMat);
-
-                    // Subtitle Segment
-                    ObjectNode tSeg = objectMapper.createObjectNode();
-                    tSeg.put("id", textSegId);
-                    tSeg.put("material_id", textMatId);
-                    tSeg.put("render_index", 11000);
-                    tSeg.put("speed", 1.0);
-                    tSeg.put("visible", true);
-                    tSeg.put("volume", 1.0);
-
-                    ObjectNode clip = tSeg.putObject("clip");
-                    clip.put("alpha", 1.0);
-                    ObjectNode transform = clip.putObject("transform");
-                    transform.put("x", xPos);
-                    transform.put("y", yPos);
-
-                    ObjectNode tSrc = tSeg.putObject("source_timerange");
-                    tSrc.put("start", 0);
-                    tSrc.put("duration", durUs);
-
-                    ObjectNode tTarget = tSeg.putObject("target_timerange");
-                    tTarget.put("start", startUs);
-                    tTarget.put("duration", durUs);
-
-                    textSegs.add(tSeg);
-                    addedSubtitles++;
                 }
 
                 ObjectNode newTextTrack = objectMapper.createObjectNode();
@@ -659,6 +679,25 @@ public class CapCutIntegrationService {
                 objectMapper.writerWithDefaultPrettyPrinter().writeValue(tmpFile, draftNode);
             } catch (Exception e) {
                 log.warn("Could not write template-2.tmp: {}", e.getMessage());
+            }
+
+            // Sync with any Timelines subfolders (CapCut 9.7 multi-timeline support)
+            File timelinesDir = new File(projectFolder, "Timelines");
+            if (timelinesDir.exists() && timelinesDir.isDirectory()) {
+                File[] timelineSubs = timelinesDir.listFiles(File::isDirectory);
+                if (timelineSubs != null) {
+                    for (File subDir : timelineSubs) {
+                        File subDraft = new File(subDir, "draft_content.json");
+                        if (subDraft.exists()) {
+                            try {
+                                objectMapper.writerWithDefaultPrettyPrinter().writeValue(subDraft, draftNode);
+                                log.info("Synced draft to timeline subfolder: {}", subDraft.getAbsolutePath());
+                            } catch (Exception e) {
+                                log.warn("Failed to write timeline sub draft {}: {}", subDraft, e.getMessage());
+                            }
+                        }
+                    }
+                }
             }
 
             // 6. Update metadata root_meta_info.json / draft_info.json
@@ -751,11 +790,69 @@ public class CapCutIntegrationService {
         dir.delete();
     }
 
-    private String smartWrapSubtitle(String text, int maxLineLength) {
-        if (text == null || text.isBlank() || text.length() <= maxLineLength || text.contains("\n")) {
-            return text;
+    public static class SubtitleChunk {
+        public final String text;
+        public final long startUs;
+        public final long durUs;
+
+        public SubtitleChunk(String text, long startUs, long durUs) {
+            this.text = text;
+            this.startUs = startUs;
+            this.durUs = durUs;
         }
-        String[] words = text.trim().split("\\s+");
+    }
+
+    public List<SubtitleChunk> splitIntoSubtitleChunks(String fullText, long startUs, long durUs) {
+        if (fullText == null || fullText.isBlank()) {
+            return Collections.emptyList();
+        }
+        // Split on sentence boundaries: ., !, ?, ..., newline
+        String[] rawParts = fullText.split("(?<=[.!?…])\\s+|\\n+");
+        List<String> validSentences = new ArrayList<>();
+        for (String p : rawParts) {
+            String trimmed = p.trim();
+            if (!trimmed.isEmpty()) {
+                validSentences.add(trimmed);
+            }
+        }
+
+        if (validSentences.size() <= 1) {
+            String single = validSentences.isEmpty() ? fullText.trim() : validSentences.get(0);
+            return Collections.singletonList(new SubtitleChunk(single, startUs, durUs));
+        }
+
+        int totalChars = 0;
+        for (String s : validSentences) {
+            totalChars += s.length();
+        }
+        if (totalChars <= 0) totalChars = 1;
+
+        List<SubtitleChunk> chunks = new ArrayList<>();
+        long currentStart = startUs;
+        for (int i = 0; i < validSentences.size(); i++) {
+            String s = validSentences.get(i);
+            long partDur;
+            if (i == validSentences.size() - 1) {
+                partDur = (startUs + durUs) - currentStart;
+            } else {
+                partDur = Math.round(((double) s.length() / totalChars) * durUs);
+            }
+            if (partDur <= 0) partDur = 500_000;
+            chunks.add(new SubtitleChunk(s, currentStart, partDur));
+            currentStart += partDur;
+        }
+        return chunks;
+    }
+
+    public String smartWrapSubtitle(String text, int maxLineLength) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String clean = text.replace("\r", " ").replace("\n", " ").trim();
+        if (clean.length() <= maxLineLength) {
+            return clean;
+        }
+        String[] words = clean.split("\\s+");
         StringBuilder sb = new StringBuilder();
         int lineLen = 0;
         for (String w : words) {

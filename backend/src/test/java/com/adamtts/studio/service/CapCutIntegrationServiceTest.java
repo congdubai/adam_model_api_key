@@ -77,7 +77,7 @@ class CapCutIntegrationServiceTest {
         req.setAddAudioTrack(false);
         req.setAddSubtitleTrack(true);
         req.setSubtitleStyle("tiktok_black_bar");
-        req.setSubtitleAlignment(1); // Center align
+        req.setSubtitleAlignment(0); // Left align (lower-left corner like reference video)
 
         CapCutApplyResponse resp = capCutService.applyToDraft(req);
         assertTrue(resp.isSuccess());
@@ -92,9 +92,11 @@ class CapCutIntegrationServiceTest {
         assertEquals("#FFFFFF", textMat.path("text_color").asText());
         assertEquals(1, textMat.path("background_style").asInt());
         assertEquals("#000000", textMat.path("background_color").asText());
-        assertEquals(0.70, textMat.path("background_alpha").asDouble(), 0.01);
-        assertEquals(0.15, textMat.path("background_round_radius").asDouble(), 0.01);
-        assertEquals(1, textMat.path("alignment").asInt());
+        assertEquals(0.75, textMat.path("background_alpha").asDouble(), 0.01);
+        assertEquals(0.20, textMat.path("background_round_radius").asDouble(), 0.01);
+        assertEquals(0, textMat.path("alignment").asInt());
+        assertFalse(textMat.path("use_effect_default_color").asBoolean());
+        assertEquals(0.008, textMat.path("bold_width").asDouble(), 0.001);
         assertFalse(textMat.path("border_enabled").asBoolean());
 
         // Check text wrapping: "phấn nền son chỉ một lần lướt là đi hết\nluôn hơ"
@@ -102,7 +104,14 @@ class CapCutIntegrationServiceTest {
         assertTrue(baseContent.contains("\n"), "Should be wrapped into two lines");
         assertTrue(baseContent.startsWith("phấn nền son"));
 
-        // Check track segments position
+        // Check content JSON has background fill defined
+        String contentStr = textMat.path("content").asText();
+        JsonNode contentJson = objectMapper.readTree(contentStr);
+        JsonNode bgFill = contentJson.path("styles").get(0).path("background").path("fill");
+        assertEquals(0.75, bgFill.path("alpha").asDouble(), 0.01);
+        assertEquals("#000000", bgFill.path("content").path("start_color").asText());
+
+        // Check track segments position for lower-left corner
         JsonNode tracks = resultJson.path("tracks");
         JsonNode textTrack = null;
         for (JsonNode t : tracks) {
@@ -115,7 +124,19 @@ class CapCutIntegrationServiceTest {
         JsonNode segNode = textTrack.path("segments").get(0);
         double x = segNode.path("clip").path("transform").path("x").asDouble();
         double y = segNode.path("clip").path("transform").path("y").asDouble();
-        assertEquals(0.0, x, 0.01, "X position should be 0.0 when centered");
-        assertEquals(-0.58, y, 0.01, "Y position should be optimized for 9:16 vertical video");
+        assertEquals(-0.38, x, 0.01, "X position should be -0.38 when left-aligned at bottom-left");
+        assertEquals(-0.62, y, 0.01, "Y position should be -0.62 for lower-third safe zone");
+    }
+
+    @Test
+    void testSentenceSplitting() {
+        String paragraph = "Giờ thì cùng anh kiểm chứng thực tế nhé! Anh sẽ thử với son và một chút phấn trên tay. Cho nước tẩy trang ra bông, lau nhẹ nhàng... Và đây là kết quả! Lớp son phấn được lấy đi khá dễ dàng, không cần chà xát quá mạnh!";
+        List<CapCutIntegrationService.SubtitleChunk> chunks = capCutService.splitIntoSubtitleChunks(paragraph, 0, 10_000_000);
+        assertEquals(5, chunks.size(), "Should split paragraph into 5 distinct sentence chunks");
+        assertEquals("Giờ thì cùng anh kiểm chứng thực tế nhé!", chunks.get(0).text);
+        assertEquals("Lớp son phấn được lấy đi khá dễ dàng, không cần chà xát quá mạnh!", chunks.get(4).text);
+        // Ensure total duration matches
+        long totalDur = chunks.stream().mapToLong(c -> c.durUs).sum();
+        assertEquals(10_000_000, totalDur);
     }
 }

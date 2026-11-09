@@ -58,7 +58,7 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
   const [addAudio, setAddAudio] = useState<boolean>(true);
   const [addSubtitles, setAddSubtitles] = useState<boolean>(true);
   const [subtitleStyle, setSubtitleStyle] = useState<'tiktok_black_bar' | 'classic_shadow'>('tiktok_black_bar');
-  const [subtitleAlignment, setSubtitleAlignment] = useState<number>(1);
+  const [subtitleAlignment, setSubtitleAlignment] = useState<number>(0); // 0 = Left (Góc dưới bên trái như video mẫu)
   const [clearCache, setClearCache] = useState<boolean>(true);
   const [syncing, setSyncing] = useState<boolean>(false);
   const [syncResult, setSyncResult] = useState<CapCutApplyResponse | null>(null);
@@ -103,6 +103,7 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
         clearCache: clearCache,
         subtitleStyle: subtitleStyle,
         subtitleAlignment: subtitleAlignment,
+        subtitleSize: 24,
       });
       if (res.success) {
         setSyncResult(res);
@@ -675,20 +676,8 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
 
               {/* Alignment */}
               <div className="flex items-center gap-1.5 text-[11px]">
-                <span className="text-slate-500 dark:text-slate-400">Căn lề:</span>
+                <span className="text-slate-500 dark:text-slate-400">Vị trí:</span>
                 <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-900">
-                  <button
-                    type="button"
-                    onClick={() => setSubtitleAlignment(1)}
-                    className={`px-2 py-0.5 rounded transition ${
-                      subtitleAlignment === 1
-                        ? 'bg-indigo-600 text-white font-bold'
-                        : 'text-slate-600 dark:text-slate-400'
-                    }`}
-                    title="Căn giữa dòng chuẩn khung hình"
-                  >
-                    Căn giữa (chuẩn)
-                  </button>
                   <button
                     type="button"
                     onClick={() => setSubtitleAlignment(0)}
@@ -697,9 +686,21 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
                         ? 'bg-indigo-600 text-white font-bold'
                         : 'text-slate-600 dark:text-slate-400'
                     }`}
-                    title="Căn lề trái"
+                    title="Góc dưới bên trái (chuẩn video mẫu)"
                   >
-                    Căn trái
+                    Góc dưới bên trái (video mẫu)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubtitleAlignment(1)}
+                    className={`px-2 py-0.5 rounded transition ${
+                      subtitleAlignment === 1
+                        ? 'bg-indigo-600 text-white font-bold'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                    title="Căn giữa dòng"
+                  >
+                    Căn giữa
                   </button>
                 </div>
               </div>
