@@ -6,9 +6,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class CapCutApplyRequest {
     private String jobId;
     private String projectFolder;
-    private boolean syncVideoClips = true;
+    private boolean syncVideoClips = false;
     private boolean addAudioTrack = true;
-    private boolean addSubtitleTrack = true;
+    private boolean addSubtitleTrack = false;
     private boolean clearCache = true;
     private String subtitleStyle = "tiktok_black_bar"; // "tiktok_black_bar" or "classic_shadow"
     private int subtitleAlignment = 0; // 0 = Left (default for TikTok lower-left), 1 = Center

@@ -56,7 +56,7 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
   const [capcutLoading, setCapcutLoading] = useState<boolean>(false);
   const [syncClips, setSyncClips] = useState<boolean>(false);
   const [addAudio, setAddAudio] = useState<boolean>(true);
-  const [addSubtitles, setAddSubtitles] = useState<boolean>(true);
+  const [addSubtitles, setAddSubtitles] = useState<boolean>(false);
   const [subtitleStyle, setSubtitleStyle] = useState<'tiktok_black_bar' | 'classic_shadow'>('tiktok_black_bar');
   const [subtitleAlignment, setSubtitleAlignment] = useState<number>(0); // 0 = Left (Góc dưới bên trái như video mẫu)
   const [clearCache, setClearCache] = useState<boolean>(true);
@@ -600,44 +600,77 @@ export const ResultPlayer: React.FC<ResultPlayerProps> = ({
           </div>
         </div>
 
-        {/* Options Row */}
-        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-700 dark:text-slate-300 pt-1">
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={addSubtitles}
-              onChange={(e) => setAddSubtitles(e.target.checked)}
-              className="rounded accent-indigo-600"
-            />
-            <span className="font-medium">Ghi track phụ đề chữ chạy (Subtitle)</span>
-          </label>
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={addAudio}
-              onChange={(e) => setAddAudio(e.target.checked)}
-              className="rounded accent-indigo-600"
-            />
-            <span>Ghi dải âm thanh lồng tiếng (Voice WAV)</span>
-          </label>
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={syncClips}
-              onChange={(e) => setSyncClips(e.target.checked)}
-              className="rounded accent-indigo-600"
-            />
-            <span>Tua tốc độ video/ảnh theo câu nói (0.4x - 2.0x)</span>
-          </label>
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={clearCache}
-              onChange={(e) => setClearCache(e.target.checked)}
-              className="rounded accent-indigo-600"
-            />
-            <span>Xóa cache CapCut trước khi ghi</span>
-          </label>
+        {/* Subtitle Toggle Switch (True / False) & Options */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-slate-100/90 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={addSubtitles}
+              onClick={() => setAddSubtitles(!addSubtitles)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 ${
+                addSubtitles ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                  addSubtitles ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-900 dark:text-white">
+                  Ghi phụ đề vào CapCut:
+                </span>
+                <span
+                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full transition-colors ${
+                    addSubtitles
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
+                      : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {addSubtitles ? 'BẬT (True)' : 'TẮT (False)'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {addSubtitles
+                  ? 'Bật: Tự động tạo track phụ đề chữ chạy chuẩn nhịp theo từng câu nói trên CapCut.'
+                  : 'Tắt: Chỉ đưa âm thanh giọng đọc (Voice WAV) vào đúng timeline, hoàn toàn không chèn phụ đề.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3.5 text-xs text-slate-600 dark:text-slate-300">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={addAudio}
+                onChange={(e) => setAddAudio(e.target.checked)}
+                className="rounded accent-indigo-600"
+              />
+              <span>Ghi âm thanh (Voice WAV)</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={syncClips}
+                onChange={(e) => setSyncClips(e.target.checked)}
+                className="rounded accent-indigo-600"
+              />
+              <span>Tua clip theo câu</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={clearCache}
+                onChange={(e) => setClearCache(e.target.checked)}
+                className="rounded accent-indigo-600"
+              />
+              <span>Xóa cache</span>
+            </label>
+          </div>
         </div>
 
         {/* Subtitle Customization & Preview Panel */}
